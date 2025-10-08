@@ -51,7 +51,7 @@ def rtl():
     print("🔙 Return to Launch (RTL)...")
     v.mode = VehicleMode("RTL")
 
-def move_forward(distance=5):
+def move_forward(distance):
     v = connect_drone()
     print(f"➡️ Moving forward {distance} meters")
     # Example: move relative to current location
@@ -70,7 +70,7 @@ def disarm():
 
 
     
-def execute_drone_command(intent, value=None):
+def execute_drone_command(intent, value):
     if intent == "TAKEOFF":
         arm_and_takeoff(value or 10)
     elif intent == "LAND":
@@ -86,7 +86,7 @@ def execute_drone_command(intent, value=None):
     elif intent == "RTL":
         rtl()
     elif intent == "MOVE_FORWARD":
-        move_forward(5)
+        move_forward(value)
     elif intent == "MOVE_BACKWARD":
         print("⬅️ Move backward (future implementation)")
     elif intent == "TURN_LEFT":
@@ -111,7 +111,11 @@ if __name__ == "__main__":
 
     
 
-    arm_and_takeoff(5)
+    arm_and_takeoff(20)
+    time.sleep(5)
+    execute_drone_command("MOVE_FORWARD", 20)
+    execute_drone_command("RTL", None)
+
     time.sleep(5)
     land()
     vehicle.close()
