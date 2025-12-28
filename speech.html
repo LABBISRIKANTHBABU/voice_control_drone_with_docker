@@ -1,0 +1,639 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Drone Command Center</title>
+  <style>
+    :root {
+      --bg-color: #1e1e2f;
+      --card-bg: #27293d;
+      --panel-bg: #202236;
+      --text-color: #ffffff;
+      --accent-green: #00f2c3;
+      --accent-red: #fd5d93;
+      --accent-blue: #1d8cf8;
+      --text-muted: #9a9a9a;
+      --border-color: rgba(255, 255, 255, 0.1);
+    }
+
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      background-color: var(--bg-color);
+      color: var(--text-color);
+      margin: 0;
+      padding: 0;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* Header */
+    header {
+      padding: 20px;
+      text-align: center;
+      background: var(--card-bg);
+      border-bottom: 1px solid var(--border-color);
+      box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    }
+
+    h1 {
+      margin: 0;
+      font-weight: 300;
+      letter-spacing: 1px;
+      font-size: 24px;
+    }
+
+    /* Main Layout */
+    .main-container {
+      display: flex;
+      flex: 1;
+      overflow: hidden;
+      /* Prevent body scroll, sections scroll instead */
+    }
+
+    /* Left Sidebar: Reference */
+    .left-panel {
+      width: 25%;
+      min-width: 250px;
+      background-color: var(--panel-bg);
+      border-right: 1px solid var(--border-color);
+      padding: 20px;
+      overflow-y: auto;
+      text-align: left;
+    }
+
+    .left-panel h2 {
+      font-size: 18px;
+      color: var(--accent-blue);
+      margin-top: 0;
+      margin-bottom: 20px;
+      border-bottom: 1px solid var(--border-color);
+      padding-bottom: 10px;
+    }
+
+    .cmd-category {
+      font-weight: bold;
+      margin-top: 15px;
+      color: #ddd;
+    }
+
+    .cmd-list {
+      list-style: none;
+      padding: 0;
+      margin-top: 5px;
+    }
+
+    .cmd-list li {
+      padding: 6px 10px;
+      font-size: 14px;
+      color: var(--text-muted);
+      border-left: 2px solid transparent;
+      margin-bottom: 4px;
+    }
+
+    .cmd-list li:hover {
+      background: rgba(255, 255, 255, 0.02);
+      border-left-color: var(--accent-blue);
+      color: #fff;
+    }
+
+    .cmd-param {
+      color: var(--accent-green);
+      opacity: 0.8;
+    }
+
+    /* Right Area: Stats & Controls */
+    .right-panel {
+      flex: 1;
+      padding: 20px;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+
+    /* Stats Row */
+    .stats-row {
+      display: flex;
+      gap: 20px;
+      flex-wrap: wrap;
+      justify-content: center;
+      width: 100%;
+      margin-bottom: 30px;
+    }
+
+    .card {
+      background-color: var(--card-bg);
+      border-radius: 12px;
+      padding: 20px;
+      flex: 1;
+      min-width: 140px;
+      max-width: 200px;
+      box-shadow: 0 4px 10px rgba(0, 0, 0, 0.2);
+      text-align: center;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .card::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 4px;
+    }
+
+    .card-total::before {
+      background: var(--accent-blue);
+    }
+
+    .card-success::before {
+      background: var(--accent-green);
+    }
+
+    .card-fail::before {
+      background: var(--accent-red);
+    }
+
+    .card h3 {
+      font-size: 13px;
+      color: var(--text-muted);
+      margin: 10px 0;
+      text-transform: uppercase;
+    }
+
+    .card .value {
+      font-size: 32px;
+      font-weight: bold;
+    }
+
+    .rate-text {
+      font-size: 12px;
+      display: block;
+      margin-top: 5px;
+      opacity: 0.7;
+    }
+
+    /* Controls */
+    .controls-container {
+      margin-bottom: 30px;
+    }
+
+    button {
+      padding: 16px 40px;
+      font-size: 18px;
+      border: none;
+      border-radius: 50px;
+      cursor: pointer;
+      font-weight: 600;
+      transition: all 0.2s;
+      box-shadow: 0 5px 15px rgba(0, 0, 0, 0.3);
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    button:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 8px 20px rgba(0, 0, 0, 0.4);
+    }
+
+    .btn-start {
+      background-image: linear-gradient(135deg, #00f2c3, #0098f0);
+      color: white;
+    }
+
+    .btn-stop {
+      background-image: linear-gradient(135deg, #fd5d93, #ec250d);
+      color: white;
+      display: none;
+    }
+
+    /* Transcript */
+    #output {
+      font-size: 20px;
+      color: #fff;
+      margin-bottom: 40px;
+      min-height: 30px;
+      font-weight: 300;
+      text-shadow: 0 2px 4px rgba(0, 0, 0, 0.5);
+    }
+
+    /* History (Bottom Full Width) */
+    .history-section {
+      width: 100%;
+      background: var(--card-bg);
+      border-top: 1px solid var(--border-color);
+      flex: 1;
+      /* Take remaining height */
+      /* Or fixed height if desired, user said "completely to the below". Let's give it substantial space */
+      display: flex;
+      flex-direction: column;
+      border-radius: 12px 12px 0 0;
+      overflow: hidden;
+      margin-top: auto;
+      /* Push to bottom */
+      max-height: 40%;
+    }
+
+    .history-header {
+      padding: 15px 20px;
+      background: rgba(0, 0, 0, 0.2);
+      font-weight: bold;
+      border-bottom: 1px solid var(--border-color);
+      display: flex;
+      justify-content: space-between;
+    }
+
+    #historyList {
+      list-style: none;
+      padding: 0;
+      margin: 0;
+      overflow-y: auto;
+      flex: 1;
+    }
+
+    #historyList li {
+      padding: 12px 20px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    #historyList li:nth-child(even) {
+      background: rgba(255, 255, 255, 0.02);
+    }
+
+    .badge {
+      padding: 4px 8px;
+      border-radius: 4px;
+      font-size: 11px;
+      font-weight: bold;
+      text-transform: uppercase;
+    }
+
+    .badge-pending {
+      color: orange;
+      background: rgba(255, 165, 0, 0.1);
+    }
+
+    .badge-executing {
+      color: var(--accent-blue);
+      background: rgba(29, 140, 248, 0.1);
+    }
+
+    .badge-success {
+      color: var(--accent-green);
+      background: rgba(0, 242, 195, 0.1);
+    }
+
+    .badge-error {
+      color: var(--accent-red);
+      background: rgba(253, 93, 147, 0.1);
+    }
+
+    /* --- Mobile Responsiveness --- */
+    @media (max-width: 900px) {
+      body {
+        height: auto;
+        display: block;
+        overflow-y: auto;
+      }
+
+      .main-container {
+        flex-direction: column;
+      }
+
+      .left-panel {
+        width: 100%;
+        border-right: none;
+        border-bottom: 1px solid var(--border-color);
+        order: 2;
+        /* Move reference below on mobile */
+        padding: 15px;
+        box-sizing: border-box;
+        max-height: 300px;
+      }
+
+      .right-panel {
+        width: 100%;
+        order: 1;
+        padding: 15px;
+        box-sizing: border-box;
+        overflow: visible;
+      }
+
+      .stats-row {
+        gap: 10px;
+      }
+
+      .card {
+        min-width: 100px;
+        padding: 15px;
+      }
+
+      .card h3 {
+        font-size: 11px;
+      }
+
+      .card .value {
+        font-size: 20px;
+      }
+
+      .history-section {
+        max-height: 400px;
+      }
+    }
+  </style>
+</head>
+
+<body>
+
+  <header>
+    <h1>🚁 Drone Command Center</h1>
+  </header>
+
+  <div class="main-container">
+
+    <!-- LEFT PANEL: REFERENCE -->
+    <div class="left-panel">
+      <h2>📚 Reference Commands</h2>
+
+      <div class="cmd-category">🛫 Basic</div>
+      <ul class="cmd-list">
+        <li>Take off <span class="cmd-param">[10 meters]</span></li>
+        <li>Land</li>
+        <li>Return to Launch (RTL)</li>
+        <li>Arm / Disarm</li>
+      </ul>
+
+      <div class="cmd-category">↔️ Movement</div>
+      <ul class="cmd-list">
+        <li>Move Forward <span class="cmd-param">[5 meters]</span></li>
+        <li>Move Backward <span class="cmd-param">[5 meters]</span></li>
+        <li>Move Left <span class="cmd-param">[5 meters]</span></li>
+        <li>Move Right <span class="cmd-param">[5 meters]</span></li>
+        <li>Move Up / Down <span class="cmd-param">[2 meters]</span></li>
+      </ul>
+
+      <div class="cmd-category">🔄 Orientation</div>
+      <ul class="cmd-list">
+        <li>Rotate Left <span class="cmd-param">[90 degrees]</span></li>
+        <li>Rotate Right <span class="cmd-param">[45 degrees]</span></li>
+      </ul>
+    </div>
+
+    <!-- RIGHT PANEL -->
+    <div class="right-panel">
+
+      <!-- STATS -->
+      <div class="stats-row">
+        <div class="card card-total">
+          <h3>Total</h3>
+          <div class="value" id="stat-total">0</div>
+          <span class="rate-text">Commands</span>
+        </div>
+        <div class="card card-success">
+          <h3>Success</h3>
+          <div class="value text-green" id="stat-success">0</div>
+          <span class="rate-text text-green" id="rate-success">Rate: 0%</span>
+        </div>
+        <div class="card card-fail">
+          <h3>Failed</h3>
+          <div class="value text-red" id="stat-fail">0</div>
+          <span class="rate-text text-red" id="rate-fail">Rate: 0%</span>
+        </div>
+      </div>
+
+      <!-- CONTROLS -->
+      <div class="controls-container">
+        <button id="startBtn" class="btn-start">▶ Start Listening</button>
+        <button id="stopBtn" class="btn-stop">⏹ Stop Listening</button>
+      </div>
+
+      <div id="output">System Ready. Click Start to begin.</div>
+
+      <!-- HISTORY (Bottom of Right Panel, taking remaining space) -->
+      <div class="history-section">
+        <div class="history-header">
+          <span>📜 Live Log</span>
+          <span style="font-size: 12px; font-weight: normal; opacity: 0.7">Latest commands on top</span>
+        </div>
+        <ul id="historyList">
+          <!-- Logs go here -->
+        </ul>
+      </div>
+
+    </div>
+  </div>
+
+  <script>
+    const startBtn = document.getElementById("startBtn");
+    const stopBtn = document.getElementById("stopBtn");
+    const output = document.getElementById("output");
+    const historyList = document.getElementById("historyList");
+
+    // Stats Elements
+    const statTotalEl = document.getElementById("stat-total");
+    const statSuccessEl = document.getElementById("stat-success");
+    const statFailEl = document.getElementById("stat-fail");
+    const rateSuccessEl = document.getElementById("rate-success");
+    const rateFailEl = document.getElementById("rate-fail");
+
+    // Stats State
+    let stats = { total: 0, success: 0, fail: 0 };
+
+    function updateStatsUI() {
+      statTotalEl.innerText = stats.total;
+      statSuccessEl.innerText = stats.success;
+      statFailEl.innerText = stats.fail;
+
+      const total = stats.total > 0 ? stats.total : 1; // avoid div/0
+      const sRate = Math.round((stats.success / total) * 100);
+      const fRate = Math.round((stats.fail / total) * 100); // Simple approx
+
+      rateSuccessEl.innerText = `Rate: ${stats.total > 0 ? sRate : 0}%`;
+      rateFailEl.innerText = `Rate: ${stats.total > 0 ? fRate : 0}%`;
+    }
+
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+
+    if (!SpeechRecognition) {
+      output.innerHTML = "<span class='text-red'>❌ Browser not supported (Use Chrome/Edge).</span>";
+      startBtn.disabled = true;
+    }
+
+    const recognition = new SpeechRecognition();
+    recognition.lang = "en-IN";
+    recognition.continuous = true;
+    recognition.interimResults = true;
+
+    // Logic State
+    const commandQueue = [];
+    let isProcessing = false;
+    let shouldListen = false;
+
+    // Helper: Add History Item
+    function addToHistory(command, id) {
+      const li = document.createElement("li");
+      li.id = "cmd-" + id;
+      li.innerHTML = `
+            <span>${command}</span>
+            <span class="badge badge-pending">Pending ⏳</span>
+        `;
+      historyList.prepend(li); // Newest on top
+      return li;
+    }
+
+    // Helper: Update History Status
+    function updateHistory(id, status, message) {
+      const li = document.getElementById("cmd-" + id);
+      if (li) {
+        let badgeClass = "badge-pending";
+        if (status === "executing") badgeClass = "badge-executing";
+        if (status === "success") badgeClass = "badge-success";
+        if (status === "error") badgeClass = "badge-error";
+
+        const cmdText = li.querySelector("span").innerText;
+        li.innerHTML = `
+                <span>${cmdText}</span>
+                <span class="badge ${badgeClass}">${message}</span>
+            `;
+      }
+    }
+
+    // Helper: Update Main Status Text
+    function updateStatusText() {
+      if (!shouldListen) {
+        output.innerText = "🛑 System Stopped.";
+        return;
+      }
+      if (isProcessing) {
+        output.innerText = `⚙ Processing commands... (Queue: ${commandQueue.length})`;
+      } else if (commandQueue.length > 0) {
+        output.innerText = `⏳ Pending execution: ${commandQueue.length}`;
+      } else {
+        output.innerText = "🎧 Listening... (Speak now)";
+      }
+    }
+
+    // Queue Processor
+    async function processQueue() {
+      if (isProcessing || commandQueue.length === 0) {
+        return;
+      }
+
+      isProcessing = true;
+      const item = commandQueue.shift(); // { text, id }
+      updateStatusText();
+
+      console.log(`📤 Processing: ${item.text}`);
+      updateHistory(item.id, "executing", "Executing...");
+
+      try {
+        const response = await fetch("http://127.0.0.1:8002/command", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ text: item.text })
+        });
+
+        const data = await response.json();
+        console.log("✅ Executed:", data);
+
+        if (data.status === "error") {
+          throw new Error(data.message);
+        }
+
+        updateHistory(item.id, "success", "Success");
+        stats.success++;
+      } catch (err) {
+        console.error("❌ Error:", err);
+        updateHistory(item.id, "error", "Failed");
+        stats.fail++;
+      } finally {
+        updateStatsUI();
+        isProcessing = false;
+        updateStatusText();
+        processQueue(); // Loop
+      }
+    }
+
+    // --- Control Logic ---
+
+    function startListening() {
+      shouldListen = true;
+      startBtn.style.display = "none";
+      stopBtn.style.display = "inline-block";
+      output.innerText = "🎧 Initialize...";
+      try {
+        recognition.start();
+      } catch (e) {
+        console.warn("Recognition issue:", e);
+      }
+    }
+
+    function stopListening() {
+      shouldListen = false;
+      startBtn.style.display = "inline-block";
+      stopBtn.style.display = "none";
+      output.innerText = "🛑 Stopping...";
+      recognition.stop();
+    }
+
+    startBtn.onclick = startListening;
+    stopBtn.onclick = stopListening;
+
+    recognition.onstart = () => {
+      if (shouldListen) updateStatusText();
+    };
+
+    recognition.onend = () => {
+      if (shouldListen) {
+        console.log("🔄 Auto-restarting...");
+        try {
+          recognition.start();
+        } catch (e) {
+          setTimeout(() => { if (shouldListen) recognition.start(); }, 100);
+        }
+      } else {
+        updateStatusText();
+      }
+    };
+
+    recognition.onresult = (event) => {
+      const latest = event.results[event.results.length - 1];
+      output.innerText = "🗣 " + latest[0].transcript;
+
+      if (latest.isFinal) {
+        const commandText = latest[0].transcript.trim();
+        if (commandText) {
+          console.log(`📥 Queuing: ${commandText}`);
+
+          // Log to Stats
+          stats.total++;
+          updateStatsUI();
+
+          const id = Date.now();
+          commandQueue.push({ text: commandText, id: id });
+          addToHistory(commandText, id);
+          processQueue();
+        }
+      }
+    };
+
+    recognition.onerror = (event) => {
+      if (event.error === 'no-speech' || event.error === 'network') {
+        // Ignore
+      } else {
+        console.error("Speech Error:", event.error);
+        output.innerText = "⚠ Warning: " + event.error;
+      }
+    };
+  </script>
+</body>
+
+</html>

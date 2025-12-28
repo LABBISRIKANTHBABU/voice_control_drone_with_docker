@@ -28,7 +28,7 @@ def arm_and_takeoff(vehicle, target_altitude):
 
 def main():
     print("Connecting to SITL...")
-    vehicle = connect('tcp:127.0.0.1:5760', wait_ready=True)
+    vehicle = connect('udp:127.0.0.1:5760', wait_ready=True)
 
     arm_and_takeoff(vehicle, 10)
 
