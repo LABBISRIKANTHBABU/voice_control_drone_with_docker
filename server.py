@@ -13,28 +13,8 @@ import os
 
 import drone_control
 from nlp_module import DroneNLP
+from stt_module import transcribe_vosk, transcribe_whisper, _load_vosk, _load_whisper
 
-# Lazy-loaded Whisper model (loaded once on first /stt call)
-_whisper_model = None
-
-def _get_whisper():
-    global _whisper_model
-    if _whisper_model is None:
-        try:
-            import imageio_ffmpeg
-            os.environ["PATH"] += os.pathsep + os.path.dirname(imageio_ffmpeg.get_ffmpeg_exe())
-        except ImportError:
-            pass
-
-        try:
-            import whisper
-            print("🎙️ Loading Whisper 'base' model (first-time download may take a moment)...")
-            _whisper_model = whisper.load_model("base")
-            print("✅ Whisper model ready")
-        except ImportError:
-            print("❌ Whisper not installed — run: pip install openai-whisper")
-            _whisper_model = "unavailable"
-    return _whisper_model
 
 app = FastAPI(title="Voice Controlled Drone Server")
 nlp = DroneNLP()
@@ -133,44 +113,51 @@ async def telemetry_stream():
     )
 
 # -------------------------------------------------
-# POST /stt  – Offline speech-to-text via Whisper
-# Accepts a WebM/WAV audio blob, returns transcribed text.
-# Browser sends: FormData with key "audio" = audio blob
+# POST /stt/vosk  – Offline STT using Vosk (project Vosk model)
+# Uses vosk-model-small-en-us-0.15 (US) or vosk-model-small-en-in-0.4 (Indian)
+# Accepts WebM/WAV audio blob, converts to 16kHz mono WAV, runs Vosk
+# -------------------------------------------------
+@app.post("/stt/vosk")
+async def stt_vosk(audio: UploadFile = File(...)):
+    try:
+        audio_bytes = await audio.read()
+        mime = audio.content_type or ""
+        text = await run_in_threadpool(transcribe_vosk, audio_bytes, mime)
+        if text:
+            return {"status": "ok", "engine": "vosk", "text": text}
+        else:
+            return {"status": "empty", "engine": "vosk", "text": "",
+                    "detail": "No speech detected — speak clearly into the mic"}
+    except FileNotFoundError as e:
+        return {"status": "error", "engine": "vosk", "text": "", "detail": str(e)}
+    except ImportError as e:
+        return {"status": "error", "engine": "vosk", "text": "", "detail": str(e)}
+    except Exception as e:
+        print(f"❌ Vosk STT error: {e}")
+        return {"status": "error", "engine": "vosk", "text": "", "detail": str(e)}
+
+# -------------------------------------------------
+# POST /stt  – Offline STT using Whisper (openai-whisper)
+# Accepts WebM/WAV audio blob, returns transcribed text.
 # -------------------------------------------------
 @app.post("/stt")
-async def speech_to_text(audio: UploadFile = File(...)):
-    model = await run_in_threadpool(_get_whisper)
-
-    if model == "unavailable":
-        return {
-            "status": "error",
-            "text":   "",
-            "detail": "openai-whisper not installed. Run: pip install openai-whisper"
-        }
-
-    # Determine file extension from MIME type
-    mime     = audio.content_type or ""
-    suffix   = ".webm" if "webm" in mime else (".mp4" if "mp4" in mime else ".wav")
-
-    # Write upload to a temp file Whisper can read
-    with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
-        tmp.write(await audio.read())
-        tmp_path = tmp.name
-
+async def stt_whisper(audio: UploadFile = File(...)):
     try:
-        result = await run_in_threadpool(model.transcribe, tmp_path, fp16=False)
-        text   = result.get("text", "").strip()
-        lang   = result.get("language", "unknown")
-        print(f"🎙️ Whisper [{lang}] → '{text}'")
-        return {"status": "ok", "text": text, "language": lang}
+        audio_bytes = await audio.read()
+        mime = audio.content_type or ""
+        result = await run_in_threadpool(transcribe_whisper, audio_bytes, mime)
+        text = result.get("text", "")
+        lang = result.get("language", "unknown")
+        if text:
+            return {"status": "ok", "engine": "whisper", "text": text, "language": lang}
+        else:
+            return {"status": "empty", "engine": "whisper", "text": "",
+                    "detail": "No speech detected — speak clearly into the mic"}
+    except ImportError as e:
+        return {"status": "error", "engine": "whisper", "text": "", "detail": str(e)}
     except Exception as e:
-        print(f"❌ Whisper error: {e}")
-        return {"status": "error", "text": "", "detail": str(e)}
-    finally:
-        try:
-            os.unlink(tmp_path)
-        except Exception:
-            pass
+        print(f"❌ Whisper STT error: {e}")
+        return {"status": "error", "engine": "whisper", "text": "", "detail": str(e)}
 
 # -------------------------------------------------
 # Command Endpoint

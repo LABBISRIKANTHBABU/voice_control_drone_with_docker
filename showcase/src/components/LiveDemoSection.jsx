@@ -44,8 +44,9 @@ const MODE_COLORS = { GUIDED: '#10b981', LAND: '#f59e0b', RTL: '#00e5ff', BRAKE:
 export default function LiveDemoSection() {
     const [inputText, setInputText] = useState('')
     const [micActive, setMicActive] = useState(false)
-    const [sttMode, setSttMode] = useState('offline')   // 'offline' | 'online'
-    const [recProgress, setRecProgress] = useState(0)         // 0-100 recording fill
+    const [sttMode, setSttMode] = useState('vosk')  // 'vosk' | 'whisper' | 'online'
+    const [recProgress, setRecProgress] = useState(0)       // 0-100 recording fill
+    const [sttLabel, setSttLabel] = useState('')      // status line under mic
     const [log, setLog] = useState([])
     const [tel, setTel] = useState(DEFAULT_TEL)
     const [backendOk, setBackendOk] = useState(null)
@@ -149,78 +150,97 @@ export default function LiveDemoSection() {
         setInputText('')
     }
 
-    const handleMic = async () => {
-        // ── OFFLINE mode: record audio → POST to /stt (Whisper) ──────────
-        if (sttMode === 'offline') {
-            if (!navigator.mediaDevices?.getUserMedia) {
-                addLog('⚠️ getUserMedia not available — use HTTPS or localhost', 'warn')
-                return
-            }
-            if (micActive) return   // already recording
+    // ── shared recorder helper ──────────────────────────────────────
+    const recordAndSend = async (endpoint, label, accentColor) => {
+        if (!navigator.mediaDevices?.getUserMedia) {
+            addLog('⚠️ getUserMedia not available — use HTTPS or localhost', 'warn')
+            return
+        }
+        if (micActive) return
 
-            addLog('🎙️ Recording 4 s (Whisper offline STT)…', 'info')
-            setMicActive(true)
-            setRecProgress(0)
+        addLog(`🎙️ Recording 4 s (${label})…`, 'info')
+        setSttLabel(`Recording… (${label})`)
+        setMicActive(true)
+        setRecProgress(0)
 
-            let stream
-            try {
-                stream = await navigator.mediaDevices.getUserMedia({ audio: true })
-            } catch {
-                addLog('🚫 Microphone access denied', 'warn')
-                setMicActive(false)
-                return
-            }
-
-            const REC_MS = 4000
-            const TICK_MS = 80
-            const recorder = new MediaRecorder(stream, { mimeType: 'audio/webm' })
-            const chunks = []
-            let elapsed = 0
-
-            // Progress ticker
-            const ticker = setInterval(() => {
-                elapsed += TICK_MS
-                setRecProgress(Math.min(100, (elapsed / REC_MS) * 100))
-            }, TICK_MS)
-
-            recorder.ondataavailable = e => { if (e.data.size > 0) chunks.push(e.data) }
-
-            recorder.onstop = async () => {
-                clearInterval(ticker)
-                setRecProgress(100)
-                stream.getTracks().forEach(t => t.stop())
-
-                const blob = new Blob(chunks, { type: 'audio/webm' })
-                const form = new FormData()
-                form.append('audio', blob, 'cmd.webm')
-
-                addLog('⏳ Whisper transcribing…', 'info')
-                try {
-                    const res = await fetch(`${BACKEND}/stt`, { method: 'POST', body: form })
-                    const data = await res.json()
-
-                    if (data.status === 'ok' && data.text) {
-                        setInputText(data.text)
-                        addLog(`🔇 Whisper: "${data.text}"`, 'ok')
-                        await executeCmd(data.text, 'UNKNOWN', null)
-                    } else {
-                        const msg = data.detail || 'No speech detected'
-                        addLog(`⚠️ STT: ${msg}`, 'warn')
-                    }
-                } catch {
-                    addLog('⚠️ /stt unreachable — is server.py running?', 'warn')
-                } finally {
-                    setMicActive(false)
-                    setRecProgress(0)
-                }
-            }
-
-            recorder.start()
-            setTimeout(() => { if (recorder.state === 'recording') recorder.stop() }, REC_MS)
+        let stream
+        try {
+            stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+        } catch {
+            addLog('🚫 Microphone access denied', 'warn')
+            setMicActive(false); setSttLabel('')
             return
         }
 
-        // ── ONLINE mode: browser Web Speech API ───────────────────────────
+        const REC_MS = 4000
+        const TICK_MS = 80
+        // Try webm first, fall back to whatever browser supports
+        const mimeType = MediaRecorder.isTypeSupported('audio/webm') ? 'audio/webm' : ''
+        const recorder = new MediaRecorder(stream, mimeType ? { mimeType } : {})
+        const chunks = []
+        let elapsed = 0
+
+        const ticker = setInterval(() => {
+            elapsed += TICK_MS
+            setRecProgress(Math.min(100, (elapsed / REC_MS) * 100))
+        }, TICK_MS)
+
+        recorder.ondataavailable = e => { if (e.data.size > 0) chunks.push(e.data) }
+
+        recorder.onstop = async () => {
+            clearInterval(ticker)
+            setRecProgress(100)
+            stream.getTracks().forEach(t => t.stop())
+            setSttLabel('Transcribing…')
+
+            const blob = new Blob(chunks, { type: recorder.mimeType || 'audio/webm' })
+            const form = new FormData()
+            form.append('audio', blob, 'cmd.webm')
+
+            try {
+                addLog(`⏳ Sending to ${endpoint}…`, 'info')
+                const res = await fetch(`${BACKEND}${endpoint}`, { method: 'POST', body: form })
+                const data = await res.json()
+
+                if ((data.status === 'ok') && data.text) {
+                    setInputText(data.text)
+                    setSttLabel(`✅ ${data.engine || label}: "${data.text}"`)
+                    addLog(`${label}: "${data.text}"`, 'ok')
+                    await executeCmd(data.text, 'UNKNOWN', null)
+                } else {
+                    const msg = data.detail || 'No speech detected — speak clearly and try again'
+                    setSttLabel(`⚠️ ${msg}`)
+                    addLog(`⚠️ ${label}: ${msg}`, 'warn')
+                }
+            } catch {
+                const msg = `⚠️ ${endpoint} unreachable — is server.py running?`
+                setSttLabel(msg)
+                addLog(msg, 'warn')
+            } finally {
+                setMicActive(false)
+                setRecProgress(0)
+                setTimeout(() => setSttLabel(''), 3500)
+            }
+        }
+
+        recorder.start()
+        setTimeout(() => { if (recorder.state === 'recording') recorder.stop() }, REC_MS)
+    }
+
+    const handleMic = async () => {
+        if (sttMode === 'vosk') {
+            // 🔇 Vosk — uses project model (vosk-model-small-en-us-0.15)
+            await recordAndSend('/stt/vosk', '🔇 Vosk', '#00e5ff')
+            return
+        }
+
+        if (sttMode === 'whisper') {
+            // 🎙️ Whisper — uses openai-whisper (high accuracy)
+            await recordAndSend('/stt', '🎙️ Whisper', '#a78bfa')
+            return
+        }
+
+        // 🌐 Online — browser Web Speech API (requires internet)
         if (!('webkitSpeechRecognition' in window || 'SpeechRecognition' in window)) {
             addLog('⚠️ Web Speech API not supported in this browser', 'warn')
             return
@@ -230,13 +250,16 @@ export default function LiveDemoSection() {
         r.lang = 'en-US'
         r.continuous = false
         setMicActive(true)
+        setSttLabel('Listening via Web Speech API…')
         r.onresult = e => {
             const text = e.results[0][0].transcript
             setInputText(text)
-            addLog(`🌐 WebSpeech: "${text}"`, 'ok')
+            setSttLabel(`🌐 Heard: "${text}"`)
+            addLog(`🌐 Web Speech: "${text}"`, 'ok')
             executeCmd(text, 'UNKNOWN', null)
+            setTimeout(() => setSttLabel(''), 3000)
         }
-        r.onerror = r.onend = () => setMicActive(false)
+        r.onerror = r.onend = () => { setMicActive(false); setSttLabel('') }
         r.start()
     }
 
@@ -309,29 +332,38 @@ export default function LiveDemoSection() {
                             </div>
 
                             {/* STT mode toggle */}
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: recProgress > 0 ? 0 : 8 }}>
-                                <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', fontWeight: 600 }}>STT:</span>
-                                {['offline', 'online'].map(m => (
-                                    <button key={m} onClick={() => setSttMode(m)} style={{
-                                        padding: '3px 12px', borderRadius: 50, fontSize: '0.68rem', fontWeight: 700,
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 8, flexWrap: 'wrap' }}>
+                                <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)', fontWeight: 700 }}>STT:</span>
+                                {[
+                                    { id: 'vosk', label: '🔇 Vosk (offline)', color: '#00e5ff' },
+                                    { id: 'whisper', label: '🎙️ Whisper (offline)', color: '#a78bfa' },
+                                    { id: 'online', label: '🌐 Web Speech (online)', color: '#f59e0b' },
+                                ].map(m => (
+                                    <button key={m.id} onClick={() => setSttMode(m.id)} style={{
+                                        padding: '3px 11px', borderRadius: 50, fontSize: '0.67rem', fontWeight: 700,
                                         cursor: 'pointer', fontFamily: 'var(--font)', transition: 'all 0.2s',
-                                        background: sttMode === m ? (m === 'offline' ? 'rgba(167,139,250,0.2)' : 'rgba(0,229,255,0.2)') : 'rgba(255,255,255,0.04)',
-                                        border: `1px solid ${sttMode === m ? (m === 'offline' ? '#a78bfa' : '#00e5ff') : 'rgba(255,255,255,0.08)'}`,
-                                        color: sttMode === m ? (m === 'offline' ? '#a78bfa' : '#00e5ff') : 'var(--text-muted)',
-                                    }}>
-                                        {m === 'offline' ? '🔇 Whisper (offline)' : '🌐 Web Speech (online)'}
-                                    </button>
+                                        background: sttMode === m.id ? `${m.color}22` : 'rgba(255,255,255,0.04)',
+                                        border: `1px solid ${sttMode === m.id ? m.color : 'rgba(255,255,255,0.08)'}`,
+                                        color: sttMode === m.id ? m.color : 'var(--text-muted)',
+                                    }}>{m.label}</button>
                                 ))}
                             </div>
 
-                            {/* Recording progress bar */}
+                            {/* sttLabel status + recording progress bar */}
+                            {sttLabel && (
+                                <div style={{ marginTop: 8, fontSize: '0.75rem', color: 'var(--text-muted)', fontFamily: 'var(--mono)', padding: '4px 10px', background: 'rgba(0,0,0,0.3)', borderRadius: 6 }}>
+                                    {sttLabel}
+                                </div>
+                            )}
                             {recProgress > 0 && (
-                                <div style={{ marginTop: 10, height: 4, borderRadius: 4, background: 'rgba(255,255,255,0.06)', overflow: 'hidden' }}>
+                                <div style={{ marginTop: 6, height: 4, borderRadius: 4, background: 'rgba(255,255,255,0.06)', overflow: 'hidden' }}>
                                     <div style={{
                                         height: '100%', borderRadius: 4,
                                         width: `${recProgress}%`,
-                                        background: 'linear-gradient(90deg, #a78bfa, #7c3aed)',
-                                        boxShadow: '0 0 8px #a78bfa66',
+                                        background: sttMode === 'vosk'
+                                            ? 'linear-gradient(90deg, #00e5ff, #0ea5e9)'
+                                            : 'linear-gradient(90deg, #a78bfa, #7c3aed)',
+                                        boxShadow: sttMode === 'vosk' ? '0 0 8px #00e5ff66' : '0 0 8px #a78bfa66',
                                         transition: 'width 0.08s linear',
                                     }} />
                                 </div>
