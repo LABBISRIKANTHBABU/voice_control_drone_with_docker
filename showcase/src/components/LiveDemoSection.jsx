@@ -44,7 +44,7 @@ const MODE_COLORS = { GUIDED: '#10b981', LAND: '#f59e0b', RTL: '#00e5ff', BRAKE:
 export default function LiveDemoSection() {
     const [inputText, setInputText] = useState('')
     const [micActive, setMicActive] = useState(false)
-    const [sttMode, setSttMode] = useState('vosk')  // 'vosk' | 'whisper' | 'online'
+    const [sttMode, setSttMode] = useState('whisper')  // 'whisper' | 'online'
     const [recProgress, setRecProgress] = useState(0)       // 0-100 recording fill
     const [sttLabel, setSttLabel] = useState('')      // status line under mic
     const [log, setLog] = useState([])
@@ -228,14 +228,8 @@ export default function LiveDemoSection() {
     }
 
     const handleMic = async () => {
-        if (sttMode === 'vosk') {
-            // 🔇 Vosk — uses project model (vosk-model-small-en-us-0.15)
-            await recordAndSend('/stt/vosk', '🔇 Vosk', '#00e5ff')
-            return
-        }
-
         if (sttMode === 'whisper') {
-            // 🎙️ Whisper — uses openai-whisper (high accuracy)
+            // 🎙️ Whisper — uses openai-whisper (offline, Indian English friendly)
             await recordAndSend('/stt', '🎙️ Whisper', '#a78bfa')
             return
         }
@@ -335,7 +329,6 @@ export default function LiveDemoSection() {
                             <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 8, flexWrap: 'wrap' }}>
                                 <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)', fontWeight: 700 }}>STT:</span>
                                 {[
-                                    { id: 'vosk', label: '🔇 Vosk (offline)', color: '#00e5ff' },
                                     { id: 'whisper', label: '🎙️ Whisper (offline)', color: '#a78bfa' },
                                     { id: 'online', label: '🌐 Web Speech (online)', color: '#f59e0b' },
                                 ].map(m => (
@@ -360,10 +353,8 @@ export default function LiveDemoSection() {
                                     <div style={{
                                         height: '100%', borderRadius: 4,
                                         width: `${recProgress}%`,
-                                        background: sttMode === 'vosk'
-                                            ? 'linear-gradient(90deg, #00e5ff, #0ea5e9)'
-                                            : 'linear-gradient(90deg, #a78bfa, #7c3aed)',
-                                        boxShadow: sttMode === 'vosk' ? '0 0 8px #00e5ff66' : '0 0 8px #a78bfa66',
+                                        background: 'linear-gradient(90deg, #a78bfa, #7c3aed)',
+                                        boxShadow: '0 0 8px #a78bfa66',
                                         transition: 'width 0.08s linear',
                                     }} />
                                 </div>
