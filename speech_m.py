@@ -1,157 +1,251 @@
-""" speech.py — Real-time speech -> NLP -> drone_control using Vosk Indian English model. Prereqs: - PulseAudio on Windows forwarding mic to WSL (PULSE_SERVER=tcp:127.0.0.1) - venv activated with vosk, sounddevice, spacy installed - vosk-model-small-en-in-0.4 downloaded and placed in project folder """ 
 """
-speech.py — Real-time speech -> NLP -> drone_control using Vosk Indian English model.
+speech_m.py — Real-time speech → Whisper STT → NLP → Drone control
 
-Prereqs:
- - PulseAudio on Windows forwarding mic to WSL (PULSE_SERVER=tcp:127.0.0.1)
- - venv activated with vosk, sounddevice, spacy installed
- - vosk-model-small-en-in-0.4 downloaded and placed in project folder
+Pipeline:
+  Microphone (sounddevice) → 5 s WAV chunk
+  → OpenAI Whisper (offline, Indian English support)
+  → spaCy NLP (DroneNLP)
+  → DroneKit MAVLink command
+
+Prereqs (inside .venv):
+  pip install openai-whisper sounddevice soundfile imageio-ffmpeg spacy
+  python -m spacy download en_core_web_sm
 """
 
 import os
-import json
-import queue
+import sys
 import time
+import queue
 from pathlib import Path
 
-# audio
+import numpy as np
 import sounddevice as sd
-from vosk import Model, KaldiRecognizer
 
-# NLP + drone control
+# ── Whisper ──────────────────────────────────────────────────────────
+try:
+    import imageio_ffmpeg
+    os.environ["PATH"] += os.pathsep + os.path.dirname(imageio_ffmpeg.get_ffmpeg_exe())
+except ImportError:
+    pass
+
+try:
+    import whisper as _whisper
+except ImportError:
+    print("❌ openai-whisper not installed. Run:")
+    print("   pip install openai-whisper imageio-ffmpeg soundfile")
+    sys.exit(1)
+
+# ── NLP ──────────────────────────────────────────────────────────────
 from nlp_module import DroneNLP
-import drone_control  # your drone_control.py
 
-# ------------------------------------------------------------------
+# ── Drone control (optional – requires Python ≤ 3.9 for dronekit) ───
+try:
+    import drone_control
+    DRONE_AVAILABLE = True
+except Exception as _e:
+    drone_control = None
+    DRONE_AVAILABLE = False
+    print(f"⚠️  drone_control unavailable ({type(_e).__name__}) — STT+NLP mode only")
+
+# ─────────────────────────────────────────────────────────────────────
 # CONFIG
-# ------------------------------------------------------------------
-SAMPLE_RATE = 16000
-BLOCKSIZE = 8000
-# name of the model folder (Indian English)
-VOSK_MODEL_DIRNAME = "vosk-model-small-en-in-0.4"
-VOSK_MODEL_PATH = Path(__file__).parent / VOSK_MODEL_DIRNAME
+# ─────────────────────────────────────────────────────────────────────
+SAMPLE_RATE  = 16000   # Whisper expects 16 kHz
+RECORD_SECS  = 5       # seconds to record each utterance
+WHISPER_SIZE = "base"  # tiny | base | small | medium  (base is best offline balance)
 
-# If microphone passthrough does not work, set USE_MIC=False to use text mode
-USE_MIC = True
+# ─────────────────────────────────────────────────────────────────────
+# Load models once at startup
+# ─────────────────────────────────────────────────────────────────────
+print(f"🎙️  Loading Whisper '{WHISPER_SIZE}' model …")
+model = _whisper.load_model(WHISPER_SIZE)
+print("✅  Whisper ready")
 
-# ------------------------------------------------------------------
-# verify model
-# ------------------------------------------------------------------
-if not VOSK_MODEL_PATH.exists():
-    raise FileNotFoundError(
-        f"Vosk model not found at: {VOSK_MODEL_PATH}\n"
-        "Download and extract the model and set VOSK_MODEL_DIRNAME accordingly."
-    )
-
-print("🧠 Loading Vosk model:", VOSK_MODEL_PATH)
-model = Model(str(VOSK_MODEL_PATH))
-rec = KaldiRecognizer(model, SAMPLE_RATE)
-rec.SetWords(False)   # optional: disable word-level timestamps to reduce output size
-
-q = queue.Queue()
 nlp = DroneNLP()
+print("✅  spaCy NLP ready\n")
 
-# ------------------------------------------------------------------
-# audio callback for sounddevice
-# ------------------------------------------------------------------
-def _callback(indata, frames, time_info, status):
-    if status:
-        print("⚠️ Audio status:", status)
-    q.put(bytes(indata))
-
-# ------------------------------------------------------------------
-# core processing: parse and execute
-# ------------------------------------------------------------------
-def process_text(text):
-    text = text.strip()
-    if not text:
-        return
-    print(f"\n📝 Recognized: {text}")
-    intent, value = nlp.parse(text)
-    print(f"🤖 NLP → intent={intent}, value={value}")
-
-    # Ensure drone is connected (connect if not)
-    if not drone_control.is_connected():
-        print("⚠️ Drone not connected — attempting to connect...")
+# ─────────────────────────────────────────────────────────────────────
+# Drone connection (optional)
+# ─────────────────────────────────────────────────────────────────────
+if DRONE_AVAILABLE:
+    try:
         drone_control.connect_drone("udp:127.0.0.1:14550")
-        # small wait for connection info to populate
-        time.sleep(1)
+    except Exception as e:
+        print(f"⚠️  SITL not reachable: {e} — continuing in STT-only mode")
+        DRONE_AVAILABLE = False
 
-    # Now execute (drone_control will check connection inside)
-    drone_control.execute_drone_command(intent, value)
+# ─────────────────────────────────────────────────────────────────────
+# Core: transcribe + parse + execute
+# ─────────────────────────────────────────────────────────────────────
+def process_audio(audio_np: np.ndarray):
+    """Transcribe a numpy float32 audio array directly via Whisper internals.
+    Bypasses ffmpeg by using whisper.pad_or_trim + log_mel_spectrogram directly.
+    """
+    import whisper as _w
 
-# ------------------------------------------------------------------
-# microphone real-time loop
-# ------------------------------------------------------------------
-def mic_loop():
-    print("🎤 Starting microphone stream (press Ctrl+C to stop).")
-    # connect to drone early (keeps single connection in process)
-    drone_control.connect_drone("udp:127.0.0.1:14550")
+    # Whisper needs float32 mono at 16kHz — already that from sounddevice
+    audio_np = audio_np.astype(np.float32)
+
+    # Pad or trim to 30s window Whisper expects
+    audio_tensor = _w.pad_or_trim(audio_np)
+
+    # Mel spectrogram on CPU
+    mel = _w.log_mel_spectrogram(audio_tensor, model.dims.n_mels)
+
+    # Decode
+    options = _w.DecodingOptions(language="en", fp16=False,
+                                 prompt="drone command: takeoff land move forward backward left right up down rotate return arm disarm hover hold")
+    result  = _w.decode(model, mel, options)
+    text    = result.text.strip() if hasattr(result, "text") else ""
+
+    if not text:
+        print("🔇  (silence or noise — nothing heard)")
+        return
+
+    print(f"\n📝  Recognized  : {text}")
+
+    intent, value = nlp.parse(text)
+    print(f"🤖  NLP         → intent={intent}, value={value}")
+
+    if intent == "UNKNOWN":
+        print("❓  Not recognized — try: 'take off 10', 'land', 'move forward 5', 'return to launch'")
+        return
+
+    if not DRONE_AVAILABLE or drone_control is None:
+        print(f"✅  STT+NLP OK  — would send: {intent}({value})")
+        print("⚠️  Drone not connected. Start SITL + server.py to execute commands.")
+        return
 
     try:
-        with sd.RawInputStream(samplerate=SAMPLE_RATE, blocksize=BLOCKSIZE,
-                               dtype='int16', channels=1, callback=_callback):
-            while True:
-                data = q.get()
-                if rec.AcceptWaveform(data):
-                    res = json.loads(rec.Result())
-                    text = res.get("text", "")
-                    process_text(text)
-                else:
-                    # partial = rec.PartialResult()   # we ignore partials for action
-                    pass
-    except KeyboardInterrupt:
-        print("\n🛑 Stopping microphone loop.")
+        if drone_control.vehicle is None:
+            print(f"✅  STT+NLP OK  — would send: {intent}({value})")
+            print("⚠️  SITL not connected yet.")
+        else:
+            drone_control.execute(intent, value)
+            print(f"🚁  Executed    : {intent}({value})")
     except Exception as e:
-        print("❌ Microphone loop error:", e)
+        print(f"❌  Drone error : {e}")
 
-# ------------------------------------------------------------------
-# fallback: text mode (keyboard) for testing
-# ------------------------------------------------------------------
+
+
+# ─────────────────────────────────────────────────────────────────────
+# Mic loop
+# ─────────────────────────────────────────────────────────────────────
+def mic_loop():
+    try:
+        dev = sd.query_devices(kind="input")
+        print(f"🎧  Microphone  : {dev.get('name', 'unknown')}")
+    except Exception as e:
+        print(f"❌  No microphone found: {e}")
+        return
+
+    print(f"\n🎤  Dynamic Speech Detection Active · Speak at any time · Ctrl+C to stop\n")
+
+    # Queue for audio chunks
+    q = queue.Queue()
+    def audio_callback(indata, frames, time_info, status):
+        """This is called for each audio block."""
+        if status:
+            pass # print(status, file=sys.stderr)
+        q.put(indata.copy())
+        
+    # VAD Variables
+    CHUNK_SIZE = 2048 # frames (0.128 seconds at 16kHz)
+    SILENCE_THRESHOLD = 0.008
+    MAX_SILENCE_CHUNKS = 12 # ~1.5 seconds of silence ends the utterance
+    
+    recording = False
+    audio_buffer = []
+    silence_chunks = 0
+    session = 0
+
+    try:
+        with sd.InputStream(samplerate=SAMPLE_RATE, channels=1, dtype="float32", 
+                            blocksize=CHUNK_SIZE, callback=audio_callback):
+            while True:
+                # Poll the queue for an audio chunk
+                try:
+                    chunk = q.get(timeout=0.1)
+                except queue.Empty:
+                    continue
+                    
+                chunk_np = chunk.flatten()
+                rms = float(np.sqrt(np.mean(chunk_np ** 2)))
+                
+                # Check for speech
+                if rms >= SILENCE_THRESHOLD:
+                    if not recording:
+                        recording = True
+                        audio_buffer = []
+                        silence_chunks = 0
+                        session += 1
+                        print("\n" + "─" * 48)
+                        print("�️  Speech detected, recording... ", end="", flush=True)
+                    else:
+                        silence_chunks = 0 # reset silence counter while speaking
+                
+                if recording:
+                    audio_buffer.append(chunk_np)
+                    if rms < SILENCE_THRESHOLD:
+                        silence_chunks += 1
+                        
+                    # If we have reached the silence limit, end recording and transcribe
+                    if silence_chunks > MAX_SILENCE_CHUNKS:
+                        # Combine buffer into one array
+                        full_audio = np.concatenate(audio_buffer)
+                        recording = False
+                        
+                        # Only transcribe if the recording is long enough (ignore tiny blips)
+                        if len(audio_buffer) > (MAX_SILENCE_CHUNKS + 3): # At least ~0.4s of actual speech
+                            print(f"\n⏳  Transcribing... (length: {len(full_audio)/SAMPLE_RATE:.1f}s)")
+                            process_audio(full_audio)
+                            print("\n🎤  Listening...")
+                        else:
+                            print("\r🔇  Noise ignored, listening...   ", end="", flush=True)
+                            
+    except KeyboardInterrupt:
+        print("\n\n🛑  Stopped. Goodbye!")
+
+
+# ─────────────────────────────────────────────────────────────────────
+# Text-mode fallback (for testing NLP without microphone)
+# ─────────────────────────────────────────────────────────────────────
 def text_mode():
-    print("⌨️ Text input mode (type 'exit' to quit).")
-    drone_control.connect_drone("udp:127.0.0.1:14550")
+    print("⌨️   Text mode — type commands and press Enter (type 'exit' to quit)\n")
     while True:
         try:
-            cmd = input("🗣️ Enter command: ").strip()
+            cmd = input("🗣️  Command: ").strip()
         except KeyboardInterrupt:
-            print("\n👋 Exiting.")
+            print("\n👋  Exiting.")
             break
         if not cmd:
             continue
         if cmd.lower() in ("exit", "quit"):
             break
-        process_text(cmd)
+        intent, value = nlp.parse(cmd)
+        print(f"🤖  NLP → intent={intent}, value={value}")
+        if intent == "UNKNOWN":
+            print("❓  Not recognized")
+        elif DRONE_AVAILABLE and drone_control and drone_control.vehicle:
+            drone_control.execute(intent, value)
+            print(f"�  Executed: {intent}({value})")
+        else:
+            print(f"✅  Would execute: {intent}({value})")
 
-drone_control.connect_drone("udp:127.0.0.1:14550")
-print("🎙️ Say a command (e.g. 'take off 10', 'move left 5', 'land')")
 
-# ------------------------------------------------------------------
-# run
-# ------------------------------------------------------------------
+# ─────────────────────────────────────────────────────────────────────
+# Entry point
+# ─────────────────────────────────────────────────────────────────────
 if __name__ == "__main__":
-    print("🔎 Speech to Drone (Vosk Indian model) starting...")
-    print(" - Vosk model:", VOSK_MODEL_PATH)
-    print(" - SAMPLE_RATE:", SAMPLE_RATE)
-    print(" - USE_MIC:", USE_MIC)
-    print()
+    USE_MIC = True   # set False to test commands via keyboard
 
-    # If USE_MIC False, run text mode
+    print("=" * 58)
+    print("  VoiceControlDrone — Whisper STT Terminal")
+    print(f"  Model : Whisper {WHISPER_SIZE!r}")
+    print(f"  Drone : {'connected' if DRONE_AVAILABLE else 'STT-only mode'}")
+    print("=" * 58)
+
     if not USE_MIC:
         text_mode()
     else:
-        # Test that sounddevice can query devices (helps for debug)
-        try:
-            devinfo = sd.query_devices(kind='input')
-            print("🎧 Input device found:", devinfo.get('name', str(devinfo)))
-        except Exception as e:
-            print("⚠️ No input device accessible in WSL. Error:", e)
-            print("→ If WSL has no mic access, set USE_MIC=False or configure PulseAudio on Windows and set PULSE_SERVER in WSL.")
-            # fallback to text mode
-            text_mode()
-            raise SystemExit(1)
-
-        # start mic loop
         mic_loop()
-
-    print("✅ speech.py ended.")

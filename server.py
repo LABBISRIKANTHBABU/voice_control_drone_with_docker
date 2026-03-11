@@ -13,7 +13,7 @@ import os
 
 import drone_control
 from nlp_module import DroneNLP
-from stt_module import transcribe_vosk, transcribe_whisper, _load_vosk, _load_whisper
+from stt_module import transcribe_whisper
 
 
 app = FastAPI(title="Voice Controlled Drone Server")
@@ -111,30 +111,6 @@ async def telemetry_stream():
             "X-Accel-Buffering": "no",
         }
     )
-
-# -------------------------------------------------
-# POST /stt/vosk  – Offline STT using Vosk (project Vosk model)
-# Uses vosk-model-small-en-us-0.15 (US) or vosk-model-small-en-in-0.4 (Indian)
-# Accepts WebM/WAV audio blob, converts to 16kHz mono WAV, runs Vosk
-# -------------------------------------------------
-@app.post("/stt/vosk")
-async def stt_vosk(audio: UploadFile = File(...)):
-    try:
-        audio_bytes = await audio.read()
-        mime = audio.content_type or ""
-        text = await run_in_threadpool(transcribe_vosk, audio_bytes, mime)
-        if text:
-            return {"status": "ok", "engine": "vosk", "text": text}
-        else:
-            return {"status": "empty", "engine": "vosk", "text": "",
-                    "detail": "No speech detected — speak clearly into the mic"}
-    except FileNotFoundError as e:
-        return {"status": "error", "engine": "vosk", "text": "", "detail": str(e)}
-    except ImportError as e:
-        return {"status": "error", "engine": "vosk", "text": "", "detail": str(e)}
-    except Exception as e:
-        print(f"❌ Vosk STT error: {e}")
-        return {"status": "error", "engine": "vosk", "text": "", "detail": str(e)}
 
 # -------------------------------------------------
 # POST /stt  – Offline STT using Whisper (openai-whisper)
