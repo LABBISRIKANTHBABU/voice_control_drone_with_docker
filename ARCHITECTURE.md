@@ -4,6 +4,7 @@ This project uses a modular architecture to convert voice commands into drone te
 
 ## 🧩 Components
 
+
 ### 1. Frontend (`speech.html`)
 -   **Tech**: HTML5, Vanilla JS, CSS3 (Dashboard UI).
 -   **Role**:
