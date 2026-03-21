@@ -52,7 +52,7 @@ except Exception as _e:
 # ─────────────────────────────────────────────────────────────────────
 SAMPLE_RATE  = 16000   # Whisper expects 16 kHz
 RECORD_SECS  = 5       # seconds to record each utterance
-WHISPER_SIZE = "base"  # tiny | base | small | medium  (base is best offline balance)
+WHISPER_SIZE = "small"  # tiny | base | small | medium  (small is best offline balance for accents)
 
 # ─────────────────────────────────────────────────────────────────────
 # Load models once at startup
@@ -86,17 +86,20 @@ def process_audio(audio_np: np.ndarray):
     # Whisper needs float32 mono at 16kHz — already that from sounddevice
     audio_np = audio_np.astype(np.float32)
 
-    # Pad or trim to 30s window Whisper expects
-    audio_tensor = _w.pad_or_trim(audio_np)
-
-    # Mel spectrogram on CPU
-    mel = _w.log_mel_spectrogram(audio_tensor, model.dims.n_mels)
-
-    # Decode
-    options = _w.DecodingOptions(language="en", fp16=False,
-                                 prompt="drone command: takeoff land move forward backward left right up down rotate return arm disarm hover hold")
-    result  = _w.decode(model, mel, options)
-    text    = result.text.strip() if hasattr(result, "text") else ""
+    # Use model.transcribe for robust output instead of raw mel decoding
+    result = model.transcribe(
+        audio_np,
+        language="en",
+        fp16=False,
+        initial_prompt=(
+            "drone command: takeoff land move forward backward left right "
+            "up down ascend descend rotate turn return to launch arm disarm "
+            "hold hover stop brake climb lower drop freeze face look spin "
+            "abort home stay lift off touch down go ahead come back reverse "
+            "strafe slide increase decrease altitude loose"
+        )
+    )
+    text = result.get("text", "").strip()
 
     if not text:
         print("🔇  (silence or noise — nothing heard)")

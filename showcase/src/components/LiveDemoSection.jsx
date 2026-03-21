@@ -150,88 +150,133 @@ export default function LiveDemoSection() {
         setInputText('')
     }
 
-    // ── shared recorder helper ──────────────────────────────────────
-    const recordAndSend = async (endpoint, label, accentColor) => {
+    // ── speech processing state ──────────────────────────────────────
+    const shouldListenRef = useRef(false);
+    const mediaRecorderRef = useRef(null);
+    const audioChunksRef = useRef([]);
+    const tickerRef = useRef(null);
+    const srRef = useRef(null); // For Web Speech API ref
+
+    const stopListening = () => {
+        shouldListenRef.current = false;
+        setMicActive(false);
+        setRecProgress(0);
+        setSttLabel('🛑 System Stopped.');
+        clearInterval(tickerRef.current);
+
+        if (sttMode === 'whisper') {
+            if (mediaRecorderRef.current && mediaRecorderRef.current.state === "recording") {
+                mediaRecorderRef.current.stop();
+            }
+            if (mediaRecorderRef.current && mediaRecorderRef.current.stream) {
+                mediaRecorderRef.current.stream.getTracks().forEach(t => t.stop());
+            }
+        } else if (srRef.current) {
+            try { srRef.current.stop(); } catch (e) { }
+        }
+    };
+
+    const processWhisperAudio = async (blob) => {
+        if (blob.size === 0) return;
+        const form = new FormData()
+        form.append('audio', blob, 'cmd.webm')
+
+        try {
+            setSttLabel("⏳ Transcribing (Whisper)...");
+            const res = await fetch(`${BACKEND}/stt`, { method: 'POST', body: form })
+            const data = await res.json()
+
+            if ((data.status === 'ok') && data.text) {
+                const text = data.text.trim();
+                setInputText(text)
+                setSttLabel(`✅ Whisper: "${text}"`)
+                addLog(`Whisper: "${text}"`, 'ok')
+                await executeCmd(text, 'UNKNOWN', null)
+            } else if (data.status === 'empty') {
+                // Ignore silence
+                setSttLabel(`🎧 Listening...`)
+            } else {
+                setSttLabel(`⚠️ STT Error: ${data.detail || 'Unknown'}`)
+            }
+        } catch {
+            setSttLabel(`⚠️ Backend unreachable. Is server.py running?`)
+        }
+    };
+
+    const startRecordingCycle = () => {
+        if (!shouldListenRef.current || !mediaRecorderRef.current) return;
+        audioChunksRef.current = [];
+
+        try {
+            mediaRecorderRef.current.start();
+            setSttLabel('🎧 Listening... (Speak now)');
+
+            // Manage progress bar
+            setRecProgress(0);
+            const REC_MS = 5000;
+            const TICK_MS = 80;
+            let elapsed = 0;
+            tickerRef.current = setInterval(() => {
+                elapsed += TICK_MS;
+                setRecProgress(Math.min(100, (elapsed / REC_MS) * 100));
+            }, TICK_MS);
+
+            setTimeout(() => {
+                clearInterval(tickerRef.current);
+                if (mediaRecorderRef.current && mediaRecorderRef.current.state === "recording") {
+                    mediaRecorderRef.current.stop();
+                }
+            }, REC_MS);
+        } catch (e) { console.error(e) }
+    };
+
+    const startOfflineListening = async () => {
         if (!navigator.mediaDevices?.getUserMedia) {
             addLog('⚠️ getUserMedia not available — use HTTPS or localhost', 'warn')
             return
         }
-        if (micActive) return
+        setMicActive(true);
+        shouldListenRef.current = true;
+        setSttLabel('🎧 Initialize...');
 
-        addLog(`🎙️ Recording 4 s (${label})…`, 'info')
-        setSttLabel(`Recording… (${label})`)
-        setMicActive(true)
-        setRecProgress(0)
-
-        let stream
         try {
-            stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+            const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+            const mimeType = MediaRecorder.isTypeSupported('audio/webm') ? 'audio/webm' : ''
+            const recorder = new MediaRecorder(stream, mimeType ? { mimeType } : {})
+            mediaRecorderRef.current = recorder;
+
+            recorder.ondataavailable = e => { if (e.data.size > 0) audioChunksRef.current.push(e.data) }
+
+            recorder.onstop = async () => {
+                const blob = new Blob(audioChunksRef.current, { type: recorder.mimeType || 'audio/webm' })
+
+                // Process audio asynchronously
+                processWhisperAudio(blob);
+
+                // Start next cycle if still listening
+                if (shouldListenRef.current) {
+                    setTimeout(startRecordingCycle, 200);
+                } else {
+                    stream.getTracks().forEach(t => t.stop());
+                }
+            };
+
+            startRecordingCycle();
         } catch {
             addLog('🚫 Microphone access denied', 'warn')
             setMicActive(false); setSttLabel('')
-            return
         }
-
-        const REC_MS = 4000
-        const TICK_MS = 80
-        // Try webm first, fall back to whatever browser supports
-        const mimeType = MediaRecorder.isTypeSupported('audio/webm') ? 'audio/webm' : ''
-        const recorder = new MediaRecorder(stream, mimeType ? { mimeType } : {})
-        const chunks = []
-        let elapsed = 0
-
-        const ticker = setInterval(() => {
-            elapsed += TICK_MS
-            setRecProgress(Math.min(100, (elapsed / REC_MS) * 100))
-        }, TICK_MS)
-
-        recorder.ondataavailable = e => { if (e.data.size > 0) chunks.push(e.data) }
-
-        recorder.onstop = async () => {
-            clearInterval(ticker)
-            setRecProgress(100)
-            stream.getTracks().forEach(t => t.stop())
-            setSttLabel('Transcribing…')
-
-            const blob = new Blob(chunks, { type: recorder.mimeType || 'audio/webm' })
-            const form = new FormData()
-            form.append('audio', blob, 'cmd.webm')
-
-            try {
-                addLog(`⏳ Sending to ${endpoint}…`, 'info')
-                const res = await fetch(`${BACKEND}${endpoint}`, { method: 'POST', body: form })
-                const data = await res.json()
-
-                if ((data.status === 'ok') && data.text) {
-                    setInputText(data.text)
-                    setSttLabel(`✅ ${data.engine || label}: "${data.text}"`)
-                    addLog(`${label}: "${data.text}"`, 'ok')
-                    await executeCmd(data.text, 'UNKNOWN', null)
-                } else {
-                    const msg = data.detail || 'No speech detected — speak clearly and try again'
-                    setSttLabel(`⚠️ ${msg}`)
-                    addLog(`⚠️ ${label}: ${msg}`, 'warn')
-                }
-            } catch {
-                const msg = `⚠️ ${endpoint} unreachable — is server.py running?`
-                setSttLabel(msg)
-                addLog(msg, 'warn')
-            } finally {
-                setMicActive(false)
-                setRecProgress(0)
-                setTimeout(() => setSttLabel(''), 3500)
-            }
-        }
-
-        recorder.start()
-        setTimeout(() => { if (recorder.state === 'recording') recorder.stop() }, REC_MS)
     }
 
     const handleMic = async () => {
+        if (micActive) {
+            stopListening();
+            return;
+        }
+
         if (sttMode === 'whisper') {
-            // 🎙️ Whisper — uses openai-whisper (offline, Indian English friendly)
-            await recordAndSend('/stt', '🎙️ Whisper', '#a78bfa')
-            return
+            await startOfflineListening();
+            return;
         }
 
         // 🌐 Online — browser Web Speech API (requires internet)
@@ -241,20 +286,39 @@ export default function LiveDemoSection() {
         }
         const SR = window.SpeechRecognition || window.webkitSpeechRecognition
         const r = new SR()
+        srRef.current = r;
         r.lang = 'en-US'
-        r.continuous = false
+        r.continuous = true
+        r.interimResults = false
+
         setMicActive(true)
+        shouldListenRef.current = true;
         setSttLabel('Listening via Web Speech API…')
+
         r.onresult = e => {
-            const text = e.results[0][0].transcript
+            const text = e.results[e.results.length - 1][0].transcript.trim()
+            if (!text) return;
             setInputText(text)
             setSttLabel(`🌐 Heard: "${text}"`)
             addLog(`🌐 Web Speech: "${text}"`, 'ok')
             executeCmd(text, 'UNKNOWN', null)
-            setTimeout(() => setSttLabel(''), 3000)
+            setTimeout(() => { if (shouldListenRef.current) setSttLabel('Listening via Web Speech API…') }, 3000)
         }
-        r.onerror = r.onend = () => { setMicActive(false); setSttLabel('') }
-        r.start()
+        r.onend = () => {
+            if (shouldListenRef.current) {
+                try { r.start(); } catch (e) { }
+            } else {
+                setMicActive(false); setSttLabel('🛑 System Stopped.');
+            }
+        }
+        r.onerror = (e) => {
+            console.error(e);
+            if (e.error !== 'no-speech') {
+                setMicActive(false); setSttLabel('⚠️ Web Speech Error');
+                shouldListenRef.current = false;
+            }
+        }
+        try { r.start(); } catch (e) { console.error(e) }
     }
 
     // ── Derived values ────────────────────────────────────────────────

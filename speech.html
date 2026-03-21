@@ -460,22 +460,14 @@
       rateFailEl.innerText = `Rate: ${stats.total > 0 ? fRate : 0}%`;
     }
 
-    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-
-    if (!SpeechRecognition) {
-      output.innerHTML = "<span class='text-red'>❌ Browser not supported (Use Chrome/Edge).</span>";
-      startBtn.disabled = true;
-    }
-
-    const recognition = new SpeechRecognition();
-    recognition.lang = "en-IN";
-    recognition.continuous = true;
-    recognition.interimResults = true;
-
     // Logic State
     const commandQueue = [];
     let isProcessing = false;
     let shouldListen = false;
+
+    // MediaRecorder State
+    let mediaRecorder = null;
+    let audioChunks = [];
 
     // Helper: Add History Item
     function addToHistory(command, id) {
@@ -507,9 +499,13 @@
     }
 
     // Helper: Update Main Status Text
-    function updateStatusText() {
+    function updateStatusText(customMessage = null) {
       if (!shouldListen) {
         output.innerText = "🛑 System Stopped.";
+        return;
+      }
+      if (customMessage) {
+        output.innerText = customMessage;
         return;
       }
       if (isProcessing) {
@@ -544,15 +540,15 @@
         const data = await response.json();
         console.log("✅ Executed:", data);
 
-        if (data.status === "error") {
-          throw new Error(data.message);
+        if (data.status === "error" || data.status === "ignored") {
+          throw new Error(data.message || "Invalid Command");
         }
 
         updateHistory(item.id, "success", "Success");
         stats.success++;
       } catch (err) {
-        console.error("❌ Error:", err);
-        updateHistory(item.id, "error", "Failed");
+        console.error("❌ Error:", err.message);
+        updateHistory(item.id, "error", "Failed: " + err.message);
         stats.fail++;
       } finally {
         updateStatsUI();
@@ -562,17 +558,96 @@
       }
     }
 
-    // --- Control Logic ---
+    // Offline Whisper STT Processing
+    async function processAudioToSTT(blob) {
+      if (blob.size === 0) return;
 
-    function startListening() {
-      shouldListen = true;
-      startBtn.style.display = "none";
-      stopBtn.style.display = "inline-block";
-      output.innerText = "🎧 Initialize...";
+      const formData = new FormData();
+      formData.append("audio", blob, "recording.webm");
+
+      updateStatusText("⏳ Transcribing offline (Whisper)...");
       try {
-        recognition.start();
+        const response = await fetch("http://127.0.0.1:8002/stt", {
+          method: "POST",
+          body: formData
+        });
+        const data = await response.json();
+
+        if (data.status === "ok" && data.text) {
+          const commandText = data.text.trim();
+          output.innerText = "� " + commandText;
+
+          console.log(`📥 Queuing valid STT: ${commandText}`);
+          stats.total++;
+          updateStatsUI();
+
+          const id = Date.now();
+          commandQueue.push({ text: commandText, id: id });
+          addToHistory(commandText, id);
+          processQueue();
+        } else if (data.status === "empty") {
+          // ignored silence
+          console.log("No speech detected.");
+          updateStatusText();
+        } else {
+          output.innerText = "⚠ STT Error: " + (data.detail || "Unknown");
+          console.error("STT network error", data);
+        }
       } catch (e) {
-        console.warn("Recognition issue:", e);
+        console.error("STT network error", e);
+        output.innerText = "⚠ Network Error calling /stt";
+      }
+    }
+
+    // Audio Recording Logic
+    function startRecordingCycle() {
+      if (!shouldListen || !mediaRecorder) return;
+
+      audioChunks = [];
+      try {
+        mediaRecorder.start();
+        updateStatusText();
+
+        // Record for 5 seconds to match "wait for 5 seconds" instruction
+        setTimeout(() => {
+          if (mediaRecorder && mediaRecorder.state === "recording") {
+            mediaRecorder.stop();
+          }
+        }, 5000);
+      } catch (e) {
+        console.error("Could not start MediaRecorder", e);
+      }
+    }
+
+    async function startListening() {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        mediaRecorder = new MediaRecorder(stream, { mimeType: 'audio/webm' });
+
+        mediaRecorder.ondataavailable = (e) => {
+          if (e.data.size > 0) audioChunks.push(e.data);
+        };
+
+        mediaRecorder.onstop = () => {
+          const blob = new Blob(audioChunks, { type: 'audio/webm' });
+          processAudioToSTT(blob);
+
+          // Restart recording cycle if still listening
+          if (shouldListen) {
+            setTimeout(startRecordingCycle, 200);
+          }
+        };
+
+        shouldListen = true;
+        startBtn.style.display = "none";
+        stopBtn.style.display = "inline-block";
+        output.innerText = "🎧 Initialize...";
+
+        startRecordingCycle();
+
+      } catch (err) {
+        console.error("Microphone access denied or error:", err);
+        output.innerHTML = "<span class='text-red'>❌ Microphone access required.</span>";
       }
     }
 
@@ -581,58 +656,20 @@
       startBtn.style.display = "inline-block";
       stopBtn.style.display = "none";
       output.innerText = "🛑 Stopping...";
-      recognition.stop();
+
+      if (mediaRecorder && mediaRecorder.state === "recording") {
+        mediaRecorder.stop();
+      }
+
+      // Stop all tracks to release mic
+      if (mediaRecorder && mediaRecorder.stream) {
+        mediaRecorder.stream.getTracks().forEach(track => track.stop());
+      }
     }
 
     startBtn.onclick = startListening;
     stopBtn.onclick = stopListening;
 
-    recognition.onstart = () => {
-      if (shouldListen) updateStatusText();
-    };
-
-    recognition.onend = () => {
-      if (shouldListen) {
-        console.log("🔄 Auto-restarting...");
-        try {
-          recognition.start();
-        } catch (e) {
-          setTimeout(() => { if (shouldListen) recognition.start(); }, 100);
-        }
-      } else {
-        updateStatusText();
-      }
-    };
-
-    recognition.onresult = (event) => {
-      const latest = event.results[event.results.length - 1];
-      output.innerText = "🗣 " + latest[0].transcript;
-
-      if (latest.isFinal) {
-        const commandText = latest[0].transcript.trim();
-        if (commandText) {
-          console.log(`📥 Queuing: ${commandText}`);
-
-          // Log to Stats
-          stats.total++;
-          updateStatsUI();
-
-          const id = Date.now();
-          commandQueue.push({ text: commandText, id: id });
-          addToHistory(commandText, id);
-          processQueue();
-        }
-      }
-    };
-
-    recognition.onerror = (event) => {
-      if (event.error === 'no-speech' || event.error === 'network') {
-        // Ignore
-      } else {
-        console.error("Speech Error:", event.error);
-        output.innerText = "⚠ Warning: " + event.error;
-      }
-    };
   </script>
 </body>
 
