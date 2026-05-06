@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 
 const NODES = [
     { id: 'user', label: '👤 User', sub: 'Speaks a command', color: '#f59e0b' },
-    { id: 'browser', label: '🌐 Browser UI', sub: 'Web Speech API → text', color: '#00e5ff' },
+    { id: 'browser', label: '🌐 Browser UI', sub: 'Whisper (Offline) / Web Speech → text', color: '#00e5ff' },
     { id: 'server', label: '⚡ FastAPI Server', sub: 'POST /command orchestration', color: '#10b981' },
     { id: 'nlp', label: '🧠 spaCy NLP', sub: 'Intent + parameter extraction', color: '#a78bfa' },
     { id: 'drone', label: '🚁 Drone (MAVLink)', sub: 'DroneKit executes flight cmd', color: '#ef4444' },
@@ -48,7 +48,7 @@ export default function ArchitectureSection() {
                 <div className="section-label">🏗️ System Architecture</div>
                 <h2 className="section-title">How It All Connects</h2>
                 <p className="section-desc">
-                    Five modular layers work in harmony — from your spoken word through NLP parsing to MAVLink drone control. Every component is decoupled for reliability and testability.
+                    Five modular layers work in harmony inside our Dockerized environment — from your spoken word through NLP parsing to MAVLink drone control. Every component is decoupled for reliability and testability.
                 </p>
 
                 {/* Flow diagram */}

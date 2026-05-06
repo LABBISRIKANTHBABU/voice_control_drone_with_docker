@@ -160,6 +160,7 @@ export default function LiveDemoSection() {
   const [offlineSpeaking,      setOfflineSpeaking]      = useState(false)
   const [offlineListening,     setOfflineListening]     = useState(false)
   const [offlineTranscribing,  setOfflineTranscribing]  = useState(false)
+  const [ttsEnabled,           setTtsEnabled]           = useState(false)  // OFF by default — prevents mic feedback loop
 
   const srRef            = useRef(null)
   const shouldListenRef  = useRef(false)
@@ -171,17 +172,24 @@ export default function LiveDemoSection() {
   const modeColor  = MODE_COLORS[tel.mode] || '#475569'
 
   // ─── Helpers ─────────────────────────────────────────────────────────────
-  const addLog = useCallback((msg, type = 'info') => {
+  const addLog = useCallback((entry, legacyType = 'info') => {
     const ts = new Date().toLocaleTimeString('en', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' })
-    setLog(curr => [...curr.slice(-49), { msg, type, ts }])
+    if (typeof entry === 'string') {
+      // legacy string support — preserves warn/ok/cmd coloring
+      setLog(curr => [...curr.slice(-49), { msg: entry, type: legacyType, ts }])
+    } else {
+      setLog(curr => [...curr.slice(-49), { ...entry, ts: entry.ts || ts }])
+    }
   }, [])
 
   const speak = useCallback((text) => {
+    if (!ttsEnabled) return                          // TOGGLE: silent when off
     if (!('speechSynthesis' in window)) return
+    window.speechSynthesis.cancel()                  // cancel any in-progress speech
     const msg = new SpeechSynthesisUtterance(text)
     msg.rate  = 1.08; msg.pitch = 0.95
     window.speechSynthesis.speak(msg)
-  }, [])
+  }, [ttsEnabled])
 
   // ─── Offline Whisper hook (always mounted, activated by mode) ────────────
   const {
@@ -195,20 +203,66 @@ export default function LiveDemoSection() {
   } = useWhisper({
     onResult: useCallback((response, meta) => {
       const text = response?.text || ''
-      if (text) setInputText(text)
+      // Clear input immediately after result — command lives in log only
+      setInputText('')
       setInterimText('')
       setCommandPending(false)
 
-      const prefix = '[OFFLINE]'
+      const totalMs = meta?.totalLatencyMs ?? 0
+      const execMs  = response?.exec_latency_ms ?? 0
+      const conf    = response?.confidence ?? null
+      const intent  = response?.intent || 'UNKNOWN'
+      const value   = response?.value ?? null
+      const detail  = response?.detail || ''
+      const modeStr = 'offline'
+
+      // FIX: Stop listening after a result is received to prevent continuous looping
+      // and hallucinated repeated commands from background noise.
+      stopWhisper()
+      setMicActive(false)
+
       if (response?.status === 'executed') {
-        addLog(`${prefix} ▶ "${text}" → ${response.intent} executed`, 'ok')
-        speak(`${response.intent.replaceAll('_', ' ').toLowerCase()} executed.`)
-        setSttLabel(`✅ ${response.intent} executed`)
+        addLog({
+          type: 'ok',
+          text,
+          intent,
+          value,
+          detail,
+          status: 'success',
+          totalLatencyMs: totalMs,
+          execLatencyMs: execMs,
+          confidence: conf,
+          mode: modeStr,
+        })
+        speak(detail || `${intent.replaceAll('_', ' ').toLowerCase()} executed`)
+        setSttLabel(`✅ ${intent} executed`)
       } else if (response?.status === 'ignored') {
-        addLog(`${prefix} ▶ "${text}" — ${response.detail || 'ignored'}`, 'warn')
+        addLog({
+          type: 'warn',
+          text,
+          intent,
+          value,
+          detail,
+          status: 'ignored',
+          totalLatencyMs: totalMs,
+          execLatencyMs: execMs,
+          confidence: conf,
+          mode: modeStr,
+        })
         setSttLabel(response.detail || 'Command not recognized')
       } else {
-        addLog(`${prefix} ${response?.detail || 'Request failed'}`, 'warn')
+        addLog({
+          type: 'warn',
+          text,
+          intent: 'UNKNOWN',
+          value: null,
+          detail: response?.detail || 'Request failed',
+          status: 'error',
+          totalLatencyMs: totalMs,
+          execLatencyMs: execMs,
+          confidence: conf,
+          mode: modeStr,
+        })
         setSttLabel(response?.detail || 'Request failed')
       }
     }, [addLog, speak]),
@@ -256,22 +310,64 @@ export default function LiveDemoSection() {
     addLog(`${reason} — falling back to offline Whisper.`, 'warn')
   }, [addLog, stopOnlineListening])
 
-  const applyCommandResult = useCallback((result, source = 'manual') => {
+  const applyCommandResult = useCallback((result, source = 'manual', totalLatencyMs = 0) => {
     setCommandPending(false)
-    if (result?.text) setInputText(result.text)
+    // Clear input immediately — command lives in the log only
+    setInputText('')
+    setInterimText('')
     setSttLabel(resultStatus(result))
 
-    const prefix = `[${(result?.mode || source).toUpperCase()}]`
+    const execMs  = result?.exec_latency_ms ?? 0
+    const conf    = result?.confidence ?? null
+    const intent  = result?.intent || 'UNKNOWN'
+    const value   = result?.value ?? null
+    const detail  = result?.detail || ''
+    const modeStr = result?.mode || source
+    const text    = result?.text || ''
+
     if (result?.status === 'executed') {
-      addLog(`${prefix} ▶ "${result.text}" → ${result.intent} executed`, 'ok')
-      speak(`${result.intent.replaceAll('_', ' ').toLowerCase()} executed.`)
+      addLog({
+        type: 'ok',
+        text,
+        intent,
+        value,
+        detail,
+        status: 'success',
+        totalLatencyMs,
+        execLatencyMs: execMs,
+        confidence: conf,
+        mode: modeStr,
+      })
+      speak(detail || `${intent.replaceAll('_', ' ').toLowerCase()} executed`)
       return
     }
     if (result?.status === 'ignored') {
-      addLog(`${prefix} ▶ "${result.text || ''}" — ${result.detail || 'Command ignored'}`, 'warn')
+      addLog({
+        type: 'warn',
+        text,
+        intent,
+        value,
+        detail,
+        status: 'ignored',
+        totalLatencyMs,
+        execLatencyMs: execMs,
+        confidence: conf,
+        mode: modeStr,
+      })
       return
     }
-    addLog(`${prefix} ${result?.detail || 'Request failed'}`, 'warn')
+    addLog({
+      type: 'warn',
+      text,
+      intent: 'UNKNOWN',
+      value: null,
+      detail: result?.detail || 'Request failed',
+      status: 'error',
+      totalLatencyMs,
+      execLatencyMs: execMs,
+      confidence: conf,
+      mode: modeStr,
+    })
   }, [addLog, speak])
 
   const executeTextCommand = useCallback(async (text, options = {}) => {
@@ -280,9 +376,27 @@ export default function LiveDemoSection() {
 
     setInputText(trimmed)
     setInterimText('')
-    addLog(`> "${trimmed}"`, 'cmd')
+    addLog({
+      type: 'cmd',
+      text: trimmed,
+      intent: null,
+      value: null,
+      detail: 'Sending command...',
+      status: 'pending',
+      totalLatencyMs: null,
+      execLatencyMs: null,
+      confidence: null,
+      mode: options.source || 'manual',
+    })
     setCommandPending(true)
     setSttLabel(options.source === 'online' ? 'Processing voice...' : 'Dispatching command...')
+
+    // Cancel any in-progress TTS before sending a new command
+    if (typeof window !== 'undefined' && window.speechSynthesis?.speaking) {
+      window.speechSynthesis.cancel()
+    }
+
+    const cmdStart = performance.now()
 
     try {
       const res  = await fetch('/text-command', {
@@ -291,14 +405,26 @@ export default function LiveDemoSection() {
         body: JSON.stringify({ text: trimmed, confidence: Number.isFinite(options.confidence) ? options.confidence : 1 }),
       })
       const data = await res.json()
+      const totalLatencyMs = Math.round(performance.now() - cmdStart)
       setBackendOk(true)
-      applyCommandResult(data, options.source || 'manual')
+      applyCommandResult(data, options.source || 'manual', totalLatencyMs)
       return data
     } catch (_) {
       setBackendOk(false)
       setCommandPending(false)
       setSttLabel('Backend unreachable')
-      addLog('Backend unreachable', 'warn')
+      addLog({
+        type: 'warn',
+        text: trimmed,
+        intent: 'UNKNOWN',
+        value: null,
+        detail: 'Backend unreachable',
+        status: 'error',
+        totalLatencyMs: Math.round(performance.now() - cmdStart),
+        execLatencyMs: 0,
+        confidence: null,
+        mode: options.source || 'manual',
+      })
       return null
     }
   }, [addLog, applyCommandResult])
@@ -500,6 +626,31 @@ export default function LiveDemoSection() {
               ⚡ ARMED
             </span>
           )}
+
+          {/* TTS Voice Reply Toggle */}
+          <button
+            id='tts-toggle-btn'
+            onClick={() => setTtsEnabled(prev => !prev)}
+            title={ttsEnabled ? 'Voice reply ON — click to mute' : 'Voice reply OFF — click to enable'}
+            style={{
+              display:      'flex',
+              alignItems:   'center',
+              gap:          '6px',
+              padding:      '4px 12px',
+              borderRadius: '12px',
+              border:       `1px solid ${ttsEnabled ? '#66bb6a' : '#444'}`,
+              background:   ttsEnabled ? 'rgba(102,187,106,0.12)' : 'rgba(255,255,255,0.04)',
+              color:        ttsEnabled ? '#66bb6a' : '#666',
+              fontSize:     '12px',
+              fontWeight:   '600',
+              cursor:       'pointer',
+              transition:   'all 0.2s ease',
+              whiteSpace:   'nowrap',
+            }}
+          >
+            <span>{ttsEnabled ? '🔊' : '🔇'}</span>
+            <span>{ttsEnabled ? 'Voice Reply ON' : 'Voice Reply OFF'}</span>
+          </button>
         </div>
 
         <div style={{ display: 'grid', gridTemplateColumns: '1.15fr 0.85fr', gap: 28, alignItems: 'start' }}>
@@ -637,16 +788,80 @@ export default function LiveDemoSection() {
                   <button onClick={() => setLog([])} style={{ fontSize: '0.65rem', color: '#475569', background: 'none', border: 'none', cursor: 'pointer' }}>Clear</button>
                 )}
               </div>
-              <div ref={logRef} style={{ padding: 14, maxHeight: 200, overflowY: 'auto', fontFamily: 'var(--mono)', fontSize: '0.78rem' }}>
+              <div ref={logRef} style={{ padding: 14, maxHeight: 260, overflowY: 'auto', fontFamily: 'var(--mono)', fontSize: '0.78rem' }}>
                 {log.length === 0 ? (
                   <span style={{ color: 'var(--text-muted)', fontStyle: 'italic' }}>Awaiting first command...</span>
                 ) : (
-                  log.map((entry, i) => (
-                    <div key={i} style={{ padding: '2px 0', color: entry.type === 'cmd' ? '#00e5ff' : entry.type === 'ok' ? '#10b981' : entry.type === 'warn' ? '#f59e0b' : 'var(--text-secondary)' }}>
-                      <span style={{ color: '#334155' }}>[{entry.ts}]</span>{' '}
-                      {entry.msg}
-                    </div>
-                  ))
+                  log.map((entry, i) => {
+                    // Legacy string entries (info/warn with msg only)
+                    if (entry.msg !== undefined && entry.intent === undefined) {
+                      return (
+                        <div key={i} style={{ padding: '3px 0', color: entry.type === 'cmd' ? '#00e5ff' : entry.type === 'ok' ? '#10b981' : entry.type === 'warn' ? '#f59e0b' : 'var(--text-secondary)' }}>
+                          <span style={{ color: '#666666' }}>[{entry.ts}]</span>{' '}{entry.msg}
+                        </div>
+                      )
+                    }
+
+                    // Rich structured entry
+                    const statusIcon = entry.status === 'success' ? '🟢' : entry.status === 'error' ? '🔴' : entry.status === 'pending' ? '⏳' : '🟡'
+                    const intentStr  = entry.intent || 'UNKNOWN'
+                    const valueStr   = entry.value != null
+                      ? (intentStr.startsWith('ROTATE') ? `${entry.value}°` : `${entry.value}m`)
+                      : '--'
+
+                    const totalMs   = entry.totalLatencyMs
+                    const latLabel  = totalMs == null ? '' : totalMs < 2000 ? '(fast)' : totalMs < 5000 ? '(normal)' : totalMs < 15000 ? '(executing)' : '(long manoeuvre)'
+                    const latColor  = totalMs == null ? '#666666' : totalMs < 2000 ? '#ffeb3b' : totalMs < 5000 ? '#ffeb3b' : '#ffeb3b'
+                    const execColor = '#ff9800'
+
+                    const conf = entry.confidence
+                    const confColor = conf == null ? '#666' : conf > 0.7 ? '#66bb6a' : conf > 0.35 ? '#ffa726' : '#ef4444'
+                    const confStr   = conf != null ? `${Math.round(conf * 100)}%` : null
+
+                    const modeLabel = (entry.mode || '').toLowerCase()
+                    const modeBg    = modeLabel === 'offline' ? '#1b5e20' : '#0d47a1'
+                    const modeText  = modeLabel === 'offline' ? '#a5d6a7' : '#90caf9'
+                    const modeName  = modeLabel === 'offline' ? 'OFFLINE' : modeLabel === 'online' ? 'ONLINE' : (modeLabel || 'MANUAL').toUpperCase()
+
+                    return (
+                      <div key={i} style={{ padding: '5px 0', borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
+                        {/* Row 1: timestamp + icon + intent → value + detail + mode badge */}
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', flexWrap: 'wrap', gap: 4 }}>
+                          <div style={{ display: 'flex', gap: 6, alignItems: 'baseline', flexWrap: 'wrap' }}>
+                            <span style={{ color: '#666666', fontSize: '0.72rem' }}>[{entry.ts}]</span>
+                            <span>{statusIcon}</span>
+                            <span style={{ color: '#00e5ff', fontWeight: 700 }}>{intentStr}</span>
+                            {entry.status !== 'pending' && (
+                              <span style={{ color: '#ffffff' }}>→ {valueStr}</span>
+                            )}
+                            {entry.detail && entry.status !== 'pending' && (
+                              <span style={{ color: '#aaaaaa', fontSize: '0.73rem' }}>&nbsp;&quot;{entry.detail}&quot;</span>
+                            )}
+                          </div>
+                          <span style={{ padding: '1px 7px', borderRadius: 20, fontSize: '0.65rem', fontWeight: 700, background: modeBg, color: modeText, flexShrink: 0 }}>
+                            {modeName}
+                          </span>
+                        </div>
+                        {/* Row 2: latency metrics (dimmed) */}
+                        {entry.status !== 'pending' && (
+                          <div style={{ display: 'flex', gap: 10, fontSize: '0.68rem', color: '#555', marginTop: 2, paddingLeft: 4, flexWrap: 'wrap' }}>
+                            {totalMs != null && (
+                              <span>
+                                Total: <span style={{ color: latColor }}>{totalMs.toLocaleString()}ms</span>
+                                {latLabel && <span style={{ color: '#555', marginLeft: 3 }}>{latLabel}</span>}
+                              </span>
+                            )}
+                            {entry.execLatencyMs != null && (
+                              <span>Exec: <span style={{ color: execColor }}>{entry.execLatencyMs.toLocaleString()}ms</span></span>
+                            )}
+                            {confStr && (
+                              <span>Conf: <span style={{ color: confColor }}>{confStr}</span></span>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    )
+                  })
                 )}
               </div>
             </div>

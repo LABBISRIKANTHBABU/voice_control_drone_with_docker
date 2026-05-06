@@ -114,7 +114,7 @@ export default function CommandsSection() {
                 <div className="section-label">🗣️ Voice Commands</div>
                 <h2 className="section-title">Speak. Parse. Fly.</h2>
                 <p className="section-desc">
-                    Click any command to see the NLP parse result, or use the live mic to speak your own command.
+                    Click any command to see the NLP parse result, or use the live mic to speak your own command. (Tip: If you omit numbers, smart defaults apply, e.g., Takeoff = 10m).
                 </p>
 
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 32, alignItems: 'start' }}>

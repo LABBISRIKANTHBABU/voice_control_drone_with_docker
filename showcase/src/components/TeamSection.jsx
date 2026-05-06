@@ -20,7 +20,7 @@ const TEAM = [
         avatar: '/avatar_sreekanth.png',
         accent: '#a78bfa',
         contrib: ['DroneKit Integration', 'MAVLink Protocol', 'SITL Testing', 'React Showcase'],
-        github: '',
+        github: 'https://github.com/LABBISRIKANTHBABU',
         linkedin: '',
     },
     {

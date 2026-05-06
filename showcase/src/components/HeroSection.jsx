@@ -112,13 +112,23 @@ export default function HeroSection() {
                         <a href="#demo" className="btn btn-primary">
                             <span>🎮</span> Live Demo
                         </a>
-                        <a
-                            href="https://github.com/LABBISRIKANTHBABU/VoiceControlDrone"
-                            target="_blank" rel="noreferrer"
-                            className="btn btn-ghost"
-                        >
-                            <span>📂</span> View on GitHub
-                        </a>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                            <a
+                                href="https://github.com/LABBISRIKANTHBABU/voice_control_drone_with_docker"
+                                target="_blank" rel="noreferrer"
+                                className="btn btn-ghost"
+                            >
+                                <span>🐳</span> View Docker Version (Primary)
+                            </a>
+                            <a
+                                href="https://github.com/LABBISRIKANTHBABU/VoiceControlDrone"
+                                target="_blank" rel="noreferrer"
+                                className="btn btn-ghost"
+                                style={{ opacity: 0.8, fontSize: '0.85rem' }}
+                            >
+                                <span>📂</span> View Manual Version
+                            </a>
+                        </div>
                     </div>
 
                     {/* Stats row */}

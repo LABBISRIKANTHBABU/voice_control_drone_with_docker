@@ -1,6 +1,29 @@
 import { useState, useRef, useEffect } from 'react'
 
-const STEPS = [
+const DOCKER_STEPS = [
+    {
+        n: 1, title: 'Clone the Repository', icon: '📥',
+        code: `git clone https://github.com/LABBISRIKANTHBABU/voice_control_drone_with_docker.git\ncd voice_control_drone_with_docker`,
+        lang: 'bash',
+    },
+    {
+        n: 2, title: 'Start with Docker Compose', icon: '🐳',
+        code: `# This builds and starts the Backend, Frontend, and ArduPilot SITL automatically\ndocker compose up -d --build`,
+        lang: 'bash',
+    },
+    {
+        n: 3, title: 'Connect QGroundControl (Optional)', icon: '📶',
+        code: `# Open QGroundControl — it auto-connects to SITL on TCP 5780\n# Verify: Drone appears on map with GPS fix`,
+        lang: 'text',
+    },
+    {
+        n: 4, title: 'Open the Voice Interface', icon: '🎙️',
+        code: `# Showcase website (React Frontend):\nhttp://localhost:5173/\n\n# Or API Backend:\nhttp://localhost:8002/`,
+        lang: 'text',
+    },
+]
+
+const MANUAL_STEPS = [
     {
         n: 1, title: 'Clone the Repository', icon: '📥',
         code: `git clone https://github.com/LABBISRIKANTHBABU/VoiceControlDrone.git\ncd VoiceControlDrone`,
@@ -12,29 +35,19 @@ const STEPS = [
         lang: 'bash',
     },
     {
-        n: 3, title: 'Install All Dependencies', icon: '📦',
-        code: `pip install -r requirements.txt\n# spaCy language model\npython -m spacy download en_core_web_sm\n# Offline Whisper STT + bundled ffmpeg\npip install openai-whisper imageio-ffmpeg`,
+        n: 3, title: 'Install Dependencies', icon: '📦',
+        code: `pip install -r requirements.txt\npython -m spacy download en_core_web_sm\npip install openai-whisper imageio-ffmpeg`,
         lang: 'bash',
     },
     {
         n: 4, title: 'Run ArduPilot SITL', icon: '🛩️',
-        code: `# In a separate terminal, start the drone simulator:\nsim_vehicle.py -v Copter --console --map\n# Wait for: "GPS lock" or "Ready to FLY"`,
+        code: `# In a separate terminal, start simulator:\nsim_vehicle.py -v Copter --console --map`,
         lang: 'bash',
     },
     {
-        n: 5, title: 'Connect QGroundControl', icon: '📶',
-        code: `# Open QGroundControl — it auto-connects to SITL on UDP 14550\n# Alternatively, connect a real drone via USB/telemetry radio\n# Verify: Drone appears on map with GPS fix`,
-        lang: 'text',
-    },
-    {
-        n: 6, title: 'Start the FastAPI Server', icon: '⚡',
-        code: `python server.py\n# Backend starts at http://localhost:8002\n# /command  – accepts NLP voice commands\n# /telemetry – real-time drone telemetry\n# /stt      – offline Whisper transcription`,
+        n: 5, title: 'Start Server & UI', icon: '⚡',
+        code: `python server.py\n# Then open http://localhost:8002`,
         lang: 'bash',
-    },
-    {
-        n: 7, title: 'Open the Voice Interface', icon: '🎙️',
-        code: `# Showcase website (React):\nhttp://localhost:5173/\n\n# Original HTML voice interface:\nhttp://localhost:8002/\n\n# 1. Allow microphone access\n# 2. Select STT mode: Whisper (offline) or Web Speech\n# 3. Speak: "Take off 10 meters"`,
-        lang: 'text',
     },
 ]
 
@@ -46,7 +59,6 @@ function CodeBlock({ code, lang }) {
             setTimeout(() => setCopied(false), 2000)
         })
     }
-    // Simple tokenize: lines starting with # are comments
     const lines = code.split('\n').map((line, i) => {
         const isComment = line.trim().startsWith('#')
         const isHttp = line.startsWith('http')
@@ -54,7 +66,7 @@ function CodeBlock({ code, lang }) {
             <div key={i}>
                 <span style={{
                     color: isComment ? '#475569' : isHttp ? '#00e5ff'
-                        : line.startsWith('python') || line.startsWith('pip') || line.startsWith('git') || line.startsWith('cd') ? '#a78bfa'
+                        : line.startsWith('python') || line.startsWith('pip') || line.startsWith('git') || line.startsWith('cd') || line.startsWith('docker') ? '#a78bfa'
                             : line.startsWith('source') || line.startsWith('venv') || line.startsWith('sim_') ? '#10b981'
                                 : '#e8f4fd',
                 }}>{line}</span>
@@ -85,6 +97,7 @@ function CodeBlock({ code, lang }) {
 
 export default function InstallSection() {
     const [visible, setVisible] = useState(false)
+    const [mode, setMode] = useState('docker') // 'docker' or 'manual'
     const ref = useRef()
 
     useEffect(() => {
@@ -93,34 +106,56 @@ export default function InstallSection() {
         return () => obs.disconnect()
     }, [])
 
+    const activeSteps = mode === 'docker' ? DOCKER_STEPS : MANUAL_STEPS
+
     return (
         <section id="install" className="section" ref={ref} style={{ zIndex: 1 }}>
             <div className="container">
                 <div className="section-label">🛠️ Installation</div>
-                <h2 className="section-title">Get Up & Flying in 6 Steps</h2>
+                <h2 className="section-title">Get Up & Flying Instantly</h2>
                 <p className="section-desc">No cloud accounts needed. Everything runs locally on your machine.</p>
 
-                {/* Prerequisites */}
-                <div className="glass" style={{ borderRadius: 16, padding: '18px 24px', marginBottom: 40, display: 'flex', flexWrap: 'wrap', gap: 14 }}>
-                    <span style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-muted)', alignSelf: 'center' }}>Prerequisites:</span>
-                    {['Python 3.10+', 'Git', 'Microphone', 'Chrome/Edge (for Whisper STT)', 'ArduPilot SITL (optional)'].map(p => (
-                        <span key={p} className="pill">{p}</span>
-                    ))}
+                {/* Tabs */}
+                <div style={{ display: 'flex', gap: 10, marginBottom: 32, justifyContent: 'center' }}>
+                    <button
+                        onClick={() => setMode('docker')}
+                        style={{
+                            padding: '10px 24px', borderRadius: 20, cursor: 'pointer',
+                            background: mode === 'docker' ? 'rgba(0,229,255,0.15)' : 'rgba(255,255,255,0.05)',
+                            border: `1px solid ${mode === 'docker' ? '#00e5ff' : 'transparent'}`,
+                            color: mode === 'docker' ? '#00e5ff' : 'var(--text-secondary)',
+                            fontWeight: 700, transition: 'all 0.2s'
+                        }}
+                    >
+                        🐳 Docker (Recommended)
+                    </button>
+                    <button
+                        onClick={() => setMode('manual')}
+                        style={{
+                            padding: '10px 24px', borderRadius: 20, cursor: 'pointer',
+                            background: mode === 'manual' ? 'rgba(167,139,250,0.15)' : 'rgba(255,255,255,0.05)',
+                            border: `1px solid ${mode === 'manual' ? '#a78bfa' : 'transparent'}`,
+                            color: mode === 'manual' ? '#a78bfa' : 'var(--text-secondary)',
+                            fontWeight: 700, transition: 'all 0.2s'
+                        }}
+                    >
+                        🐍 Manual / Python
+                    </button>
                 </div>
 
                 {/* Steps */}
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 28 }}>
-                    {STEPS.map((s, i) => (
-                        <div key={s.n} style={{
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 28, minHeight: 400 }}>
+                    {activeSteps.map((s, i) => (
+                        <div key={mode + s.n} style={{
                             display: 'grid', gridTemplateColumns: '180px 1fr', gap: 24, alignItems: 'start',
-                            opacity: visible ? 1 : 0, transform: visible ? 'none' : 'translateY(20px)',
-                            transition: `all 0.5s ${i * 100}ms ease`,
+                            animation: visible ? `fade-up 0.5s ${i * 100}ms ease both` : 'none',
                         }}>
                             {/* Step label */}
                             <div style={{ textAlign: 'right', paddingTop: 14 }}>
                                 <div style={{
                                     display: 'inline-flex', alignItems: 'center', gap: 10,
-                                    background: 'rgba(0,229,255,0.07)', border: '1px solid rgba(0,229,255,0.15)',
+                                    background: mode === 'docker' ? 'rgba(0,229,255,0.07)' : 'rgba(167,139,250,0.07)',
+                                    border: `1px solid ${mode === 'docker' ? 'rgba(0,229,255,0.15)' : 'rgba(167,139,250,0.15)'}`,
                                     borderRadius: 10, padding: '6px 14px',
                                 }}>
                                     <span style={{ fontSize: '1.1rem' }}>{s.icon}</span>
@@ -149,7 +184,7 @@ export default function InstallSection() {
                         Open your browser, speak a command, and watch the drone respond in real-time.
                     </p>
                     <a
-                        href="https://github.com/LABBISRIKANTHBABU/VoiceControlDrone"
+                        href={mode === 'docker' ? 'https://github.com/LABBISRIKANTHBABU/voice_control_drone_with_docker' : 'https://github.com/LABBISRIKANTHBABU/VoiceControlDrone'}
                         target="_blank" rel="noreferrer"
                         className="btn btn-primary"
                     >
