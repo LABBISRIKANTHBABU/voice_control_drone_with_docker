@@ -14,7 +14,7 @@
 
 
 [![Watch Demo](https://img.shields.io/badge/🎬-Watch_Demo_Video-FF0000?style=for-the-badge&logo=youtube)](https://res.cloudinary.com/dnt5w44al/video/upload/v1766822735/V_C_D_Demo_Video__zumuri.mp4)
-[![Documentation]([https://img.shields.io/badge/📚-Full_Documentation-blue?style=for-the-badge)]([https://www.jetir.org/papers/JETIR2604967.pdf])
+[![Documentation](https://img.shields.io/badge/📚-Full_Documentation-blue?style=for-the-badge)](https://www.jetir.org/papers/JETIR2604967.pdf)
 
 </div>
 
