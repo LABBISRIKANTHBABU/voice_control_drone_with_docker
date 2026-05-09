@@ -12,9 +12,9 @@
 
 <h3>🎤 Speak. Command. Fly. An advanced, fully-dockerized voice-controlled drone system with offline AI speech recognition.</h3>
 
-[![Live Demo](https://img.shields.io/badge/🌐-Live_Demo-8A2BE2?style=for-the-badge&logo=vercel)](https://voice-control-drone.vercel.app)
+
 [![Watch Demo](https://img.shields.io/badge/🎬-Watch_Demo_Video-FF0000?style=for-the-badge&logo=youtube)](https://res.cloudinary.com/dnt5w44al/video/upload/v1766822735/V_C_D_Demo_Video__zumuri.mp4)
-[![Documentation](https://img.shields.io/badge/📚-Full_Documentation-blue?style=for-the-badge)](https://www.notion.so/VoiceControlDrone-Documentation-323019bfbc8b810f8a02d898b81bc554)
+[![Documentation](https://img.shields.io/badge/📚-Full_Documentation-blue?style=for-the-badge)](https://www.jetir.org/papers/JETIR2604967.pdf)
 
 </div>
 
@@ -239,8 +239,7 @@ copies or substantial portions of the Software.
 
 ### 🚁 Ready to Control Drones with Your Voice?
 
-[![Live Demo](https://img.shields.io/badge/🌐-Try_Live_Demo-8A2BE2?style=for-the-badge)](https://voice-control-drone.vercel.app)
-[![Documentation](https://img.shields.io/badge/📚-Read_the_Docs-blue?style=for-the-badge)](https://www.notion.so/VoiceControlDrone-Documentation-323019bfbc8b810f8a02d898b81bc554)
+[![Documentation](https://img.shields.io/badge/📚-Read_the_Docs-blue?style=for-the-badge)](https://www.jetir.org/papers/JETIR2604967.pdf)
 [![Star on GitHub](https://img.shields.io/badge/⭐-Star_on_GitHub-yellow?style=for-the-badge)](https://github.com/LABBISRIKANTHBABU/voice_control_drone_with_docker)
 
 **Star this repository if you find it useful!** ⭐
