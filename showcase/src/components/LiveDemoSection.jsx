@@ -4,40 +4,39 @@ import { useWhisper } from '../hooks/useWhisper'
 const DEMO_COMMANDS = [
   'Take off 10 meters',
   'Move forward 5',
-  'Rotate right 90 degrees',
   'Return to Home',
   'Land now',
   'Hold position',
 ]
 
 const DEFAULT_TEL = {
-  altitude:    0,
+  altitude: 0,
   groundspeed: 0,
-  airspeed:    0,
-  battPct:     null,
-  battVolt:    null,
-  lat:         35.363261,
-  lon:         149.16523,
-  mode:        'GUIDED',
-  heading:     0,
-  roll:        0,
-  pitch:       0,
-  armed:       false,
-  satellites:  0,
-  gps_fix:     0,
-  connected:   false,
+  airspeed: 0,
+  battPct: null,
+  battVolt: null,
+  lat: 35.363261,
+  lon: 149.16523,
+  mode: 'GUIDED',
+  heading: 0,
+  roll: 0,
+  pitch: 0,
+  armed: false,
+  satellites: 0,
+  gps_fix: 0,
+  connected: false,
 }
 
 const MODE_COLORS = {
-  GUIDED:    '#10b981',
-  LAND:      '#f59e0b',
-  RTL:       '#00e5ff',
-  BRAKE:     '#ef4444',
+  GUIDED: '#10b981',
+  LAND: '#f59e0b',
+  RTL: '#00e5ff',
+  BRAKE: '#ef4444',
   STABILIZE: '#a78bfa',
-  LOITER:    '#38bdf8',
-  ALT_HOLD:  '#fb923c',
-  AUTO:      '#34d399',
-  UNKNOWN:   '#475569',
+  LOITER: '#38bdf8',
+  ALT_HOLD: '#fb923c',
+  AUTO: '#34d399',
+  UNKNOWN: '#475569',
 }
 
 // ─── Gauge bar ───────────────────────────────────────────────────────────────
@@ -82,11 +81,11 @@ function Compass({ heading }) {
     <div style={{ position: 'relative', width: 80, height: 80, borderRadius: '50%', border: '2px solid rgba(255,255,255,0.12)', flexShrink: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
       <svg width="76" height="76" viewBox="0 0 76 76">
         <circle cx="38" cy="38" r="36" fill="none" stroke="rgba(255,255,255,0.05)" strokeWidth="1" />
-        {['N','E','S','W'].map((d, i) => {
+        {['N', 'E', 'S', 'W'].map((d, i) => {
           const angle = i * 90
-          const rad   = (angle - 90) * Math.PI / 180
-          const x     = 38 + 28 * Math.cos(rad)
-          const y     = 38 + 28 * Math.sin(rad)
+          const rad = (angle - 90) * Math.PI / 180
+          const x = 38 + 28 * Math.cos(rad)
+          const y = 38 + 28 * Math.sin(rad)
           return <text key={d} x={x} y={y} textAnchor="middle" dominantBaseline="middle" fill={d === 'N' ? '#ef4444' : '#64748b'} fontSize="9" fontWeight="700">{d}</text>
         })}
         <line
@@ -123,18 +122,18 @@ function WaveformBars({ active, color = '#00e5ff' }) {
 
 // ─── Network state ────────────────────────────────────────────────────────────
 function getConnectionState() {
-  const conn      = navigator.connection || navigator.mozConnection || navigator.webkitConnection
-  const isOnline  = navigator.onLine
-  const effType   = conn?.effectiveType || 'unknown'
-  const rtt       = typeof conn?.rtt === 'number' ? conn.rtt : null
-  const goodConn  = conn ? !['slow-2g', '2g'].includes(effType) && (rtt === null || rtt < 1200) : true
+  const conn = navigator.connection || navigator.mozConnection || navigator.webkitConnection
+  const isOnline = navigator.onLine
+  const effType = conn?.effectiveType || 'unknown'
+  const rtt = typeof conn?.rtt === 'number' ? conn.rtt : null
+  const goodConn = conn ? !['slow-2g', '2g'].includes(effType) && (rtt === null || rtt < 1200) : true
   return { isOnline, effectiveType: effType, rtt, useOnline: isOnline && goodConn }
 }
 
 function resultStatus(result) {
   if (!result) return 'Awaiting command...'
   if (result.status === 'executed') return `✅ ${result.intent?.replaceAll('_', ' ')} executed`
-  if (result.status === 'ignored')  return result.detail || 'Command ignored'
+  if (result.status === 'ignored') return result.detail || 'Command ignored'
   return result.detail || 'Request failed'
 }
 
@@ -144,32 +143,32 @@ function engineLabel(mode) {
 
 // ─── Main component ───────────────────────────────────────────────────────────
 export default function LiveDemoSection() {
-  const [inputText,            setInputText]            = useState('')
-  const [interimText,          setInterimText]          = useState('')   // live "Recording..." feedback
-  const [micActive,            setMicActive]            = useState(false)
-  const [modePreference,       setModePreference]       = useState('auto')
-  const [fallbackMode,         setFallbackMode]         = useState(null)
-  const [offlineAutoStartToken,setOfflineAutoStartToken] = useState(0)
-  const [sttLabel,             setSttLabel]             = useState('Hybrid controller ready.')
-  const [log,                  setLog]                  = useState([])
-  const [tel,                  setTel]                  = useState(DEFAULT_TEL)
-  const [backendOk,            setBackendOk]            = useState(null)
-  const [liveMode,             setLiveMode]             = useState(false)
-  const [networkState,         setNetworkState]         = useState(getConnectionState())
-  const [commandPending,       setCommandPending]       = useState(false)
-  const [offlineSpeaking,      setOfflineSpeaking]      = useState(false)
-  const [offlineListening,     setOfflineListening]     = useState(false)
-  const [offlineTranscribing,  setOfflineTranscribing]  = useState(false)
-  const [ttsEnabled,           setTtsEnabled]           = useState(false)  // OFF by default — prevents mic feedback loop
+  const [inputText, setInputText] = useState('')
+  const [interimText, setInterimText] = useState('')   // live "Recording..." feedback
+  const [micActive, setMicActive] = useState(false)
+  const [modePreference, setModePreference] = useState('auto')
+  const [fallbackMode, setFallbackMode] = useState(null)
+  const [offlineAutoStartToken, setOfflineAutoStartToken] = useState(0)
+  const [sttLabel, setSttLabel] = useState('Hybrid controller ready.')
+  const [log, setLog] = useState([])
+  const [tel, setTel] = useState(DEFAULT_TEL)
+  const [backendOk, setBackendOk] = useState(null)
+  const [liveMode, setLiveMode] = useState(false)
+  const [networkState, setNetworkState] = useState(getConnectionState())
+  const [commandPending, setCommandPending] = useState(false)
+  const [offlineSpeaking, setOfflineSpeaking] = useState(false)
+  const [offlineListening, setOfflineListening] = useState(false)
+  const [offlineTranscribing, setOfflineTranscribing] = useState(false)
+  const [ttsEnabled, setTtsEnabled] = useState(false)  // OFF by default — prevents mic feedback loop
 
-  const srRef            = useRef(null)
-  const shouldListenRef  = useRef(false)
-  const logRef           = useRef(null)
-  const esRef            = useRef(null)
+  const srRef = useRef(null)
+  const shouldListenRef = useRef(false)
+  const logRef = useRef(null)
+  const esRef = useRef(null)
 
-  const autoMode   = networkState.useOnline ? 'online' : 'offline'
+  const autoMode = networkState.useOnline ? 'online' : 'offline'
   const activeMode = fallbackMode || (modePreference === 'auto' ? autoMode : modePreference)
-  const modeColor  = MODE_COLORS[tel.mode] || '#475569'
+  const modeColor = MODE_COLORS[tel.mode] || '#475569'
 
   // ─── Helpers ─────────────────────────────────────────────────────────────
   const addLog = useCallback((entry, legacyType = 'info') => {
@@ -187,19 +186,19 @@ export default function LiveDemoSection() {
     if (!('speechSynthesis' in window)) return
     window.speechSynthesis.cancel()                  // cancel any in-progress speech
     const msg = new SpeechSynthesisUtterance(text)
-    msg.rate  = 1.08; msg.pitch = 0.95
+    msg.rate = 1.08; msg.pitch = 0.95
     window.speechSynthesis.speak(msg)
   }, [ttsEnabled])
 
   // ─── Offline Whisper hook (always mounted, activated by mode) ────────────
   const {
-    isListening:    whisperListening,
+    isListening: whisperListening,
     isTranscribing: whisperTranscribing,
-    isSpeaking:     whisperSpeaking,
-    workerReady:    whisperReady,
-    lastLatency:    whisperLatency,
+    isSpeaking: whisperSpeaking,
+    workerReady: whisperReady,
+    lastLatency: whisperLatency,
     startListening: startWhisper,
-    stopListening:  stopWhisper,
+    stopListening: stopWhisper,
   } = useWhisper({
     onResult: useCallback((response, meta) => {
       const text = response?.text || ''
@@ -209,11 +208,11 @@ export default function LiveDemoSection() {
       setCommandPending(false)
 
       const totalMs = meta?.totalLatencyMs ?? 0
-      const execMs  = response?.exec_latency_ms ?? 0
-      const conf    = response?.confidence ?? null
-      const intent  = response?.intent || 'UNKNOWN'
-      const value   = response?.value ?? null
-      const detail  = response?.detail || ''
+      const execMs = response?.exec_latency_ms ?? 0
+      const conf = response?.confidence ?? null
+      const intent = response?.intent || 'UNKNOWN'
+      const value = response?.value ?? null
+      const detail = response?.detail || ''
       const modeStr = 'offline'
 
       // FIX: Stop listening after a result is received to prevent continuous looping
@@ -287,7 +286,7 @@ export default function LiveDemoSection() {
   })
 
   // sync offline state badges
-  useEffect(() => { setOfflineListening(whisperListening) },    [whisperListening])
+  useEffect(() => { setOfflineListening(whisperListening) }, [whisperListening])
   useEffect(() => { setOfflineTranscribing(whisperTranscribing) }, [whisperTranscribing])
 
   // ─── Online Web Speech ────────────────────────────────────────────────────
@@ -298,7 +297,7 @@ export default function LiveDemoSection() {
     setSttLabel(message)
     setInterimText('')
     if (srRef.current) {
-      try { srRef.current.onresult = null; srRef.current.onerror = null; srRef.current.onend = null; srRef.current.stop() } catch (_) {}
+      try { srRef.current.onresult = null; srRef.current.onerror = null; srRef.current.onend = null; srRef.current.stop() } catch (_) { }
       srRef.current = null
     }
   }, [])
@@ -317,13 +316,13 @@ export default function LiveDemoSection() {
     setInterimText('')
     setSttLabel(resultStatus(result))
 
-    const execMs  = result?.exec_latency_ms ?? 0
-    const conf    = result?.confidence ?? null
-    const intent  = result?.intent || 'UNKNOWN'
-    const value   = result?.value ?? null
-    const detail  = result?.detail || ''
+    const execMs = result?.exec_latency_ms ?? 0
+    const conf = result?.confidence ?? null
+    const intent = result?.intent || 'UNKNOWN'
+    const value = result?.value ?? null
+    const detail = result?.detail || ''
     const modeStr = result?.mode || source
-    const text    = result?.text || ''
+    const text = result?.text || ''
 
     if (result?.status === 'executed') {
       addLog({
@@ -399,7 +398,7 @@ export default function LiveDemoSection() {
     const cmdStart = performance.now()
 
     try {
-      const res  = await fetch('/text-command', {
+      const res = await fetch('/text-command', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ text: trimmed, confidence: Number.isFinite(options.confidence) ? options.confidence : 1 }),
@@ -434,10 +433,10 @@ export default function LiveDemoSection() {
     if (!SR) { fallbackToOffline('Browser speech recognition unavailable'); return }
     if (micActive) { stopOnlineListening(); return }
 
-    const recognition         = new SR()
-    srRef.current             = recognition
-    recognition.lang          = 'en-US'
-    recognition.continuous    = true
+    const recognition = new SR()
+    srRef.current = recognition
+    recognition.lang = 'en-US'
+    recognition.continuous = true
     recognition.interimResults = true    // ← enables real-time interim text
     recognition.maxAlternatives = 1
 
@@ -446,7 +445,7 @@ export default function LiveDemoSection() {
     setSttLabel('Listening...')
 
     recognition.onresult = async (event) => {
-      let interim  = ''
+      let interim = ''
       let finalTxt = ''
       for (let i = event.resultIndex; i < event.results.length; i++) {
         const t = event.results[i][0].transcript
@@ -501,7 +500,7 @@ export default function LiveDemoSection() {
   // ─── SSE telemetry stream ─────────────────────────────────────────────────
   const connectSSE = useCallback(() => {
     if (esRef.current) { esRef.current.close() }
-    const es  = new EventSource('/telemetry/stream')
+    const es = new EventSource('/telemetry/stream')
     esRef.current = es
 
     es.onmessage = (event) => {
@@ -509,24 +508,24 @@ export default function LiveDemoSection() {
         const data = JSON.parse(event.data)
         setTel(prev => ({
           ...prev,
-          connected:   data.connected   ?? prev.connected,
-          altitude:    data.altitude    ?? prev.altitude,
+          connected: data.connected ?? prev.connected,
+          altitude: data.altitude ?? prev.altitude,
           groundspeed: data.groundspeed ?? prev.groundspeed,
-          airspeed:    data.airspeed    ?? prev.airspeed,
-          battPct:     data.battery_pct  != null ? data.battery_pct : prev.battPct,
-          battVolt:    data.battery_volt ?? prev.battVolt,
-          lat:         data.lat         ?? prev.lat,
-          lon:         data.lon         ?? prev.lon,
-          mode:        data.mode        ?? prev.mode,
-          heading:     data.heading     ?? prev.heading,
-          roll:        data.roll        ?? prev.roll,
-          pitch:       data.pitch       ?? prev.pitch,
-          armed:       data.armed       ?? prev.armed,
-          satellites:  data.satellites  ?? prev.satellites,
-          gps_fix:     data.gps_fix     ?? prev.gps_fix,
+          airspeed: data.airspeed ?? prev.airspeed,
+          battPct: data.battery_pct != null ? data.battery_pct : prev.battPct,
+          battVolt: data.battery_volt ?? prev.battVolt,
+          lat: data.lat ?? prev.lat,
+          lon: data.lon ?? prev.lon,
+          mode: data.mode ?? prev.mode,
+          heading: data.heading ?? prev.heading,
+          roll: data.roll ?? prev.roll,
+          pitch: data.pitch ?? prev.pitch,
+          armed: data.armed ?? prev.armed,
+          satellites: data.satellites ?? prev.satellites,
+          gps_fix: data.gps_fix ?? prev.gps_fix,
         }))
         setLiveMode(data.connected === true)
-      } catch (_) {}
+      } catch (_) { }
     }
 
     es.onerror = () => {
@@ -540,7 +539,7 @@ export default function LiveDemoSection() {
   // network listener
   useEffect(() => {
     const update = () => setNetworkState(getConnectionState())
-    const conn   = navigator.connection || navigator.mozConnection || navigator.webkitConnection
+    const conn = navigator.connection || navigator.mozConnection || navigator.webkitConnection
     window.addEventListener('online', update)
     window.addEventListener('offline', update)
     conn?.addEventListener?.('change', update)
@@ -560,7 +559,7 @@ export default function LiveDemoSection() {
         setBackendOk(h.status === 'ok')
         setTel(prev => ({
           ...prev,
-          mode:  h?.drone?.mode  ?? prev.mode,
+          mode: h?.drone?.mode ?? prev.mode,
           armed: h?.drone?.armed ?? prev.armed,
         }))
       } catch (_) {
@@ -602,10 +601,10 @@ export default function LiveDemoSection() {
 
   // ─── Derived state ────────────────────────────────────────────────────────
   const statusBadgeColor = backendOk === null ? '#f59e0b' : backendOk ? '#10b981' : '#ef4444'
-  const gpsFixed         = tel.gps_fix >= 3
-  const isMicOn          = activeMode === 'online' ? micActive : (offlineListening || whisperListening)
-  const isSpeakingNow    = activeMode === 'online' ? micActive : offlineSpeaking
-  const isProcessingNow  = activeMode === 'offline' && (offlineTranscribing || whisperTranscribing)
+  const gpsFixed = tel.gps_fix >= 3
+  const isMicOn = activeMode === 'online' ? micActive : (offlineListening || whisperListening)
+  const isSpeakingNow = activeMode === 'online' ? micActive : offlineSpeaking
+  const isProcessingNow = activeMode === 'offline' && (offlineTranscribing || whisperTranscribing)
 
   // What to show in the input box
   const displayValue = interimText || inputText
@@ -633,19 +632,19 @@ export default function LiveDemoSection() {
             onClick={() => setTtsEnabled(prev => !prev)}
             title={ttsEnabled ? 'Voice reply ON — click to mute' : 'Voice reply OFF — click to enable'}
             style={{
-              display:      'flex',
-              alignItems:   'center',
-              gap:          '6px',
-              padding:      '4px 12px',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              padding: '4px 12px',
               borderRadius: '12px',
-              border:       `1px solid ${ttsEnabled ? '#66bb6a' : '#444'}`,
-              background:   ttsEnabled ? 'rgba(102,187,106,0.12)' : 'rgba(255,255,255,0.04)',
-              color:        ttsEnabled ? '#66bb6a' : '#666',
-              fontSize:     '12px',
-              fontWeight:   '600',
-              cursor:       'pointer',
-              transition:   'all 0.2s ease',
-              whiteSpace:   'nowrap',
+              border: `1px solid ${ttsEnabled ? '#66bb6a' : '#444'}`,
+              background: ttsEnabled ? 'rgba(102,187,106,0.12)' : 'rgba(255,255,255,0.04)',
+              color: ttsEnabled ? '#66bb6a' : '#666',
+              fontSize: '12px',
+              fontWeight: '600',
+              cursor: 'pointer',
+              transition: 'all 0.2s ease',
+              whiteSpace: 'nowrap',
             }}
           >
             <span>{ttsEnabled ? '🔊' : '🔇'}</span>
@@ -804,24 +803,24 @@ export default function LiveDemoSection() {
 
                     // Rich structured entry
                     const statusIcon = entry.status === 'success' ? '🟢' : entry.status === 'error' ? '🔴' : entry.status === 'pending' ? '⏳' : '🟡'
-                    const intentStr  = entry.intent || 'UNKNOWN'
-                    const valueStr   = entry.value != null
+                    const intentStr = entry.intent || 'UNKNOWN'
+                    const valueStr = entry.value != null
                       ? (intentStr.startsWith('ROTATE') ? `${entry.value}°` : `${entry.value}m`)
                       : '--'
 
-                    const totalMs   = entry.totalLatencyMs
-                    const latLabel  = totalMs == null ? '' : totalMs < 2000 ? '(fast)' : totalMs < 5000 ? '(normal)' : totalMs < 15000 ? '(executing)' : '(long manoeuvre)'
-                    const latColor  = totalMs == null ? '#666666' : totalMs < 2000 ? '#ffeb3b' : totalMs < 5000 ? '#ffeb3b' : '#ffeb3b'
+                    const totalMs = entry.totalLatencyMs
+                    const latLabel = totalMs == null ? '' : totalMs < 2000 ? '(fast)' : totalMs < 5000 ? '(normal)' : totalMs < 15000 ? '(executing)' : '(long manoeuvre)'
+                    const latColor = totalMs == null ? '#666666' : totalMs < 2000 ? '#ffeb3b' : totalMs < 5000 ? '#ffeb3b' : '#ffeb3b'
                     const execColor = '#ff9800'
 
                     const conf = entry.confidence
                     const confColor = conf == null ? '#666' : conf > 0.7 ? '#66bb6a' : conf > 0.35 ? '#ffa726' : '#ef4444'
-                    const confStr   = conf != null ? `${Math.round(conf * 100)}%` : null
+                    const confStr = conf != null ? `${Math.round(conf * 100)}%` : null
 
                     const modeLabel = (entry.mode || '').toLowerCase()
-                    const modeBg    = modeLabel === 'offline' ? '#1b5e20' : '#0d47a1'
-                    const modeText  = modeLabel === 'offline' ? '#a5d6a7' : '#90caf9'
-                    const modeName  = modeLabel === 'offline' ? 'OFFLINE' : modeLabel === 'online' ? 'ONLINE' : (modeLabel || 'MANUAL').toUpperCase()
+                    const modeBg = modeLabel === 'offline' ? '#1b5e20' : '#0d47a1'
+                    const modeText = modeLabel === 'offline' ? '#a5d6a7' : '#90caf9'
+                    const modeName = modeLabel === 'offline' ? 'OFFLINE' : modeLabel === 'online' ? 'ONLINE' : (modeLabel || 'MANUAL').toUpperCase()
 
                     return (
                       <div key={i} style={{ padding: '5px 0', borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
@@ -895,9 +894,9 @@ export default function LiveDemoSection() {
               <div style={{ display: 'flex', gap: 12, alignItems: 'center', padding: '10px 0' }}>
                 <AttitudeWidget roll={tel.roll} pitch={tel.pitch} />
                 <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 6 }}>
-                  <SmallRow label='Roll'  value={`${tel.roll.toFixed(1)}°`}  color='#f59e0b' />
+                  <SmallRow label='Roll' value={`${tel.roll.toFixed(1)}°`} color='#f59e0b' />
                   <SmallRow label='Pitch' value={`${tel.pitch.toFixed(1)}°`} color='#a78bfa' />
-                  <SmallRow label='Hdg'   value={`${tel.heading}°`}           color='#00e5ff' />
+                  <SmallRow label='Hdg' value={`${tel.heading}°`} color='#00e5ff' />
                 </div>
                 <Compass heading={tel.heading} />
               </div>
